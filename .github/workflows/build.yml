@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -24,10 +24,18 @@ jobs:
         shell: pwsh
         run: dotnet publish src/NtBar/NtBar.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
 
-      - name: Upload preview
+      - name: Upload preview artifact
         uses: actions/upload-artifact@v4
         with:
           name: NtBar-preview-win-x64
           path: publish/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release delete preview --yes --cleanup-tag 2>$null
+          gh release create preview publish/NtBar.exe --prerelease --title "NtBar preview" --notes "Automated Windows x64 preview build. This is an early prototype, not a complete DisplayFusion replacement."
