@@ -43,21 +43,12 @@ internal static class NativeMethods
     internal static extern bool IsWindow(nint hWnd);
 
     [DllImport("user32.dll")]
-    internal static extern bool GetWindowRect(nint hWnd, out RECT rect);
+    internal static extern bool PostMessage(nint hWnd, uint message, nint wParam, nint lParam);
 
     internal const int GWL_EXSTYLE = -20;
     internal const long WS_EX_TOOLWINDOW = 0x00000080L;
     internal const long WS_EX_APPWINDOW = 0x00040000L;
-    internal const int SW_SHOW = 5;
     internal const int SW_MINIMIZE = 6;
     internal const int SW_RESTORE = 9;
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct RECT
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
+    internal const uint WM_CLOSE = 0x0010;
 }
