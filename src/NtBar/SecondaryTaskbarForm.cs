@@ -14,7 +14,6 @@ internal sealed class SecondaryTaskbarForm : Form
     private WindowTracker? _tracker;
     private string _lastWindowSignature = string.Empty;
     private Screen _targetScreen;
-    private bool _allowClose;
 
     internal SecondaryTaskbarForm()
     {
@@ -136,11 +135,7 @@ internal sealed class SecondaryTaskbarForm : Form
         refresh.Click += (_, _) => RefreshWindows();
         _menu.Items.Add(refresh);
         var exit = new ToolStripMenuItem("Exit ntbar");
-        exit.Click += (_, _) =>
-        {
-            _allowClose = true;
-            Close();
-        };
+        exit.Click += (_, _) => Close();
         _menu.Items.Add(exit);
     }
 
@@ -155,12 +150,12 @@ internal sealed class SecondaryTaskbarForm : Form
         if (IsDisposed || !IsHandleCreated)
             return;
 
-        BeginInvoke(() =>
+        BeginInvoke((Action)(() =>
         {
             Screen? current = Screen.AllScreens.FirstOrDefault(s => s.DeviceName == _targetScreen.DeviceName);
             _targetScreen = current ?? ChooseTargetScreen();
             PositionOnTargetScreen();
-        });
+        }));
     }
 
     private void RefreshWindows()
@@ -171,7 +166,11 @@ internal sealed class SecondaryTaskbarForm : Form
         IReadOnlyList<TrackedWindow> windows = _tracker.GetWindows();
         string signature = string.Join("|", windows.Select(w => $"{w.Handle}:{w.Title}:{w.IsMinimized}"));
         if (signature == _lastWindowSignature)
+        {
+            foreach (TrackedWindow window in windows)
+                window.Icon?.Dispose();
             return;
+        }
 
         _lastWindowSignature = signature;
         _windowButtons.SuspendLayout();
@@ -209,19 +208,19 @@ internal sealed class SecondaryTaskbarForm : Form
                 button.Click += (_, _) => WindowTracker.ActivateOrMinimize(window);
                 button.MouseUp += (_, e) =>
                 {
-                    if (e.Button == MouseButtons.Right)
+                    if (e.Button != MouseButtons.Right)
+                        return;
+
+                    var context = new ContextMenuStrip();
+                    var closeItem = new ToolStripMenuItem("Close window");
+                    closeItem.Click += (_, _) =>
                     {
-                        var item = new ToolStripMenuItem("Close window");
-                        item.Click += (_, _) =>
-                        {
-                            if (NativeMethods.IsWindow(window.Handle))
-                                NativeMethods.PostMessage(window.Handle, NativeMethods.WM_CLOSE, nint.Zero, nint.Zero);
-                        };
-                        var context = new ContextMenuStrip();
-                        context.Items.Add(item);
-                        context.Closed += (_, _) => context.Dispose();
-                        context.Show(button, e.Location);
-                    }
+                        if (NativeMethods.IsWindow(window.Handle))
+                            NativeMethods.PostMessage(window.Handle, NativeMethods.WM_CLOSE, nint.Zero, nint.Zero);
+                    };
+                    context.Items.Add(closeItem);
+                    context.Closed += (_, _) => context.Dispose();
+                    context.Show(button, e.Location);
                 };
                 _toolTip.SetToolTip(button, window.Title);
                 _windowButtons.Controls.Add(button);
@@ -236,16 +235,5 @@ internal sealed class SecondaryTaskbarForm : Form
     private void UpdateClock()
     {
         _clock.Text = DateTime.Now.ToString("ddd d MMM  HH:mm");
-    }
-
-    protected override void OnFormClosing(FormClosingEventArgs e)
-    {
-        if (!_allowClose && e.CloseReason == CloseReason.UserClosing)
-        {
-            e.Cancel = true;
-            Hide();
-            return;
-        }
-        base.OnFormClosing(e);
     }
 }
