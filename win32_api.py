@@ -1,7 +1,8 @@
 import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QFileInfo
+from PySide6.QtWidgets import QFileIconProvider
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 shell32 = ctypes.WinDLL("shell32", use_last_error=True)
@@ -102,7 +103,7 @@ def load_window_icon(hwnd):
         path = ctypes.create_unicode_buffer(size.value)
         if not kernel32.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(size)):
             return None
-        icon = QIcon(path.value)
+        icon = QFileIconProvider().icon(QFileInfo(path.value))
         return icon if not icon.isNull() else None
     finally:
         kernel32.CloseHandle(process)
