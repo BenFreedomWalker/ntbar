@@ -297,9 +297,9 @@ class SecondaryTaskbar(QWidget):
 
         if windows:
             for window in windows:
-                self.buttons.addWidget(TaskButton(window, self.panel_height, self.task_button_width, self.show_task_labels, self.host))
+                self.buttons.addWidget(TaskButton(window, self.panel_height, self.task_button_width, self.show_task_labels, self.task_host))
         else:
-            empty = QLabel("No open windows", self.host)
+            empty = QLabel("No open windows", self.task_host)
             empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             empty.setStyleSheet("color:#858d98; padding:0 10px;")
             empty.setFixedHeight(max(1, self.panel_height - 8))
@@ -320,7 +320,7 @@ class SecondaryTaskbar(QWidget):
 
         # The task-list module expands into the space between menu and clock.
         self.task_scroll.setMinimumWidth(0)
-        self.scroll.setFixedHeight(inner_height)
+        self.task_scroll.setFixedHeight(inner_height)
 
     def show_settings(self):
         dialog = QDialog(self)
