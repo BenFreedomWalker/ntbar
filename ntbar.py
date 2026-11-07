@@ -1,9 +1,9 @@
 import sys
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle
-from win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
+from PySide6.QtGui import QFont, QDesktopServices
+from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox
+from PySide6.QtCore import QUrl\nfrom win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
 
 if sys.platform != "win32":
     raise SystemExit("NtBar supports Windows 10 and 11.")
@@ -129,6 +129,14 @@ class SecondaryTaskbar(QWidget):
         menu.addSeparator()
         menu.addAction("Exit NtBar", self.close)
         menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
+
+    def show_about(self):
+        QMessageBox.about(
+            self, "About NtBar",
+            "<b>NtBar</b><br>Secondary taskbar for Windows<br><br>"
+            "Built with Python, PySide6 and native Windows APIs.<br>"
+            "Project: github.com/BenFreedomWalker/ntbar"
+        )
 
     def select_monitor(self, monitor):
         self.target = monitor

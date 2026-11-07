@@ -110,12 +110,12 @@ def load_window_icon(hwnd):
 def activate_or_minimize(hwnd):
     if not user32.IsWindow(hwnd):
         return
-    if user32.IsIconic(hwnd):
+    if hwnd == user32.GetForegroundWindow() and not user32.IsIconic(hwnd):
+        user32.ShowWindowAsync(hwnd, SW_MINIMIZE)
+    else:
         user32.ShowWindowAsync(hwnd, SW_RESTORE)
         user32.BringWindowToTop(hwnd)
         user32.SetForegroundWindow(hwnd)
-    else:
-        user32.ShowWindowAsync(hwnd, SW_MINIMIZE)
 
 def close_window(hwnd):
     if user32.IsWindow(hwnd):
