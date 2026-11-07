@@ -45,6 +45,7 @@ class TaskButton(QToolButton):
 
 class SecondaryTaskbar(QWidget):
     DEFAULT_HEIGHT = 44
+    PANEL_MODULE_ORDER = ("menu", "tasks", "clock")
 
     def __init__(self):
         super().__init__()
@@ -76,12 +77,10 @@ class SecondaryTaskbar(QWidget):
         self.menu_button.setText("NtBar")
         self.menu_button.setFixedHeight(max(1, self.panel_height - vertical_margin * 2))
         self.menu_button.clicked.connect(self.show_menu)
-        layout.addWidget(self.menu_button)
-        layout.addSpacing(8)
 
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(False)
-        self.scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -91,14 +90,24 @@ class SecondaryTaskbar(QWidget):
         self.buttons.setContentsMargins(0, 0, 0, 0)
         self.buttons.setSpacing(5)
         self.scroll.setWidget(self.host)
-        layout.addWidget(self.scroll)
-        layout.addSpacing(8)
 
         self.clock = QLabel(self)
         self.clock.setObjectName("clock")
         self.clock.setFont(QFont("Segoe UI", 9))
-        layout.addWidget(self.clock)
-        layout.addStretch(1)
+        self.clock.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        # Modules are independent widgets in an explicit order. The task list
+        # receives flexible space; the clock stays anchored to the right edge.
+        self.module_widgets = {
+            "menu": self.menu_button,
+            "tasks": self.scroll,
+            "clock": self.clock,
+        }
+        for module_name in self.PANEL_MODULE_ORDER:
+            layout.addWidget(
+                self.module_widgets[module_name],
+                1 if module_name == "tasks" else 0,
+            )
 
         self.target = None
         self.signature = None
@@ -207,10 +216,8 @@ class SecondaryTaskbar(QWidget):
         inner_height = max(1, self.panel_height - min(8, self.panel_height - 1))
         self.host.setFixedSize(content_width, inner_height)
 
-        monitor_width = (self.target or {}).get("width", 1920)
-        panel_width = int(monitor_width * self.panel_length / 100)
-        max_tasklist_width = max(1, min(int(monitor_width * 0.55), panel_width - 250))
-        self.scroll.setFixedWidth(min(content_width, max_tasklist_width))
+        # The task-list module expands into the space between menu and clock.
+        self.scroll.setMinimumWidth(0)
         self.scroll.setFixedHeight(inner_height)
 
     def show_settings(self):
