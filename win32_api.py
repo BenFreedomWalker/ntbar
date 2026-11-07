@@ -197,7 +197,7 @@ def reposition_appbar(hwnd, monitor_handle, thickness, edge="bottom", length_per
         else:
             left = monitor.left + (full - width) // 2
         top = data.rc.top if edge == "top" else data.rc.bottom - thickness
-        user32.SetWindowPos(hwnd, -1, left, top, width, thickness, 0x0010 | 0x0040)
+        return (left, top, width, thickness)
     else:
         full = monitor.bottom - monitor.top
         height = max(1, min(full, round(full * percent)))
@@ -208,4 +208,4 @@ def reposition_appbar(hwnd, monitor_handle, thickness, edge="bottom", length_per
         else:
             top = monitor.top + (full - height) // 2
         left = data.rc.left if edge == "left" else data.rc.right - thickness
-        user32.SetWindowPos(hwnd, -1, left, top, thickness, height, 0x0010 | 0x0040)
+        return (left, top, thickness, height)
