@@ -1,9 +1,10 @@
 import signal
 import sys
+import json
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont, QDesktopServices
-from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QCheckBox
+from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QCheckBox, QListWidget, QPushButton, QVBoxLayout, QInputDialog
 from PySide6.QtCore import QUrl, QSettings
 from win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
 
@@ -46,7 +47,14 @@ class TaskButton(QToolButton):
 
 class SecondaryTaskbar(QWidget):
     DEFAULT_HEIGHT = 44
-    PANEL_MODULE_ORDER = ("menu", "tasks", "clock")
+    DEFAULT_PANEL_ITEMS = ["start", "tasks", "separator", "clock"]
+    ITEM_LABELS = {
+        "start": "Start menu (placeholder)",
+        "tasks": "Tasklist",
+        "clock": "Clock",
+        "separator": "Separator",
+        "expand": "Expanded separator",
+    }
 
     def __init__(self):
         super().__init__()
@@ -57,6 +65,12 @@ class SecondaryTaskbar(QWidget):
         self.panel_alignment = self.settings.value("panel_alignment", "center")
         self.show_task_labels = self.settings.value("show_task_labels", True, type=bool)
         self.task_button_width = self.settings.value("task_button_width", 96, type=int)
+        try:
+            self.panel_items = json.loads(self.settings.value("panel_items", json.dumps(self.DEFAULT_PANEL_ITEMS)))
+            if not isinstance(self.panel_items, list) or not all(x in self.ITEM_LABELS for x in self.panel_items):
+                raise ValueError("Invalid panel item list")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            self.panel_items = list(self.DEFAULT_PANEL_ITEMS)
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
@@ -64,10 +78,10 @@ class SecondaryTaskbar(QWidget):
         self.setFixedHeight(self.panel_height)
         self.setStyleSheet("""
             QWidget#NtBar { background:#202329; color:#f1f1f1; }
-            QToolButton#menuButton { background:#292e36; color:#f1f1f1;
-                border:1px solid #3c424c; border-radius:5px; padding:5px 11px; }
-            QToolButton#menuButton:hover { background:#3b424d; }
-            QLabel#clock { color:#e2e5e9; padding:0 12px; }
+            QToolButton#panelItem { background:#292e36; color:#f1f1f1;
+                border:1px solid #3c424c; border-radius:0; padding:4px 10px; }
+            QToolButton#panelItem:hover { background:#3b424d; }
+            QLabel#clock { color:#e2e5e9; padding:0 8px; }
             QScrollArea { border:0; background:transparent; }
         """)
         layout = QHBoxLayout(self)
@@ -75,46 +89,28 @@ class SecondaryTaskbar(QWidget):
         layout.setContentsMargins(7, vertical_margin, 7, vertical_margin)
         layout.setSpacing(7)
 
-        self.menu_button = QToolButton(self)
-        self.menu_button.setObjectName("menuButton")
-        self.menu_button.setText("NtBar")
-        self.menu_button.setFixedHeight(max(1, self.panel_height - vertical_margin * 2))
-        self.menu_button.clicked.connect(self.show_menu)
-
-        self.scroll = QScrollArea(self)
-        self.scroll.setWidgetResizable(False)
-        self.scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.scroll.setFrameShape(QFrame.NoFrame)
-        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll.setMinimumWidth(0)
-        self.host = QWidget()
-        self.host.setAttribute(Qt.WA_StyledBackground, True)
-        self.host.setStyleSheet('background:transparent;')
-        self.buttons = QHBoxLayout(self.host)
+        self.task_scroll = QScrollArea(self)
+        self.task_scroll.setWidgetResizable(False)
+        self.task_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.task_scroll.setFrameShape(QFrame.NoFrame)
+        self.task_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.task_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.task_scroll.setMinimumWidth(0)
+        self.task_host = QWidget()
+        self.task_host.setAttribute(Qt.WA_StyledBackground, True)
+        self.task_host.setStyleSheet("background:transparent;")
+        self.buttons = QHBoxLayout(self.task_host)
         self.buttons.setContentsMargins(0, 0, 0, 0)
         self.buttons.setSpacing(2)
         self.buttons.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.scroll.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.scroll.setWidget(self.host)
+        self.task_scroll.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.task_scroll.setWidget(self.task_host)
 
         self.clock = QLabel(self)
         self.clock.setObjectName("clock")
         self.clock.setFont(QFont("Segoe UI", 9))
-        self.clock.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-        # Modules are independent widgets in an explicit order. The task list
-        # receives flexible space; the clock stays anchored to the right edge.
-        self.module_widgets = {
-            "menu": self.menu_button,
-            "tasks": self.scroll,
-            "clock": self.clock,
-        }
-        for module_name in self.PANEL_MODULE_ORDER:
-            layout.addWidget(
-                self.module_widgets[module_name],
-                1 if module_name == "tasks" else 0,
-            )
+        self.clock.setAlignment(Qt.AlignCenter)
+        self.rebuild_modules()
 
         self.target = None
         self.signature = None
@@ -155,7 +151,7 @@ class SecondaryTaskbar(QWidget):
                 self.setGeometry(*geometry)
             self.raise_()
 
-    def show_menu(self):
+    def contextMenuEvent(self, event):
         menu = QMenu(self)
         monitor_menu = menu.addMenu("Move taskbar to monitor")
         for number, monitor in enumerate(monitor_list(), 1):
@@ -167,12 +163,111 @@ class SecondaryTaskbar(QWidget):
             action.setChecked(bool(self.target and self.target["device"] == monitor["device"]))
             action.triggered.connect(lambda checked=False, m=monitor: self.select_monitor(m))
         menu.addSeparator()
+        menu.addAction("Panel Items…", self.show_panel_items)
         menu.addAction("Settings…", self.show_settings)
         menu.addAction("Refresh windows", self.refresh_windows)
         menu.addAction("About NtBar", self.show_about)
         menu.addSeparator()
         menu.addAction("Exit NtBar", self.close)
-        menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
+        menu.exec(event.globalPos())
+
+    def make_panel_item(self, item):
+        if item == "tasks":
+            return self.task_scroll
+        if item == "clock":
+            return self.clock
+        if item == "separator":
+            line = QFrame(self)
+            line.setFrameShape(QFrame.VLine)
+            line.setFrameShadow(QFrame.Plain)
+            line.setStyleSheet("color:#555b65;")
+            line.setFixedWidth(7)
+            return line
+        if item == "expand":
+            spacer = QWidget(self)
+            spacer.setMinimumWidth(0)
+            spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            return spacer
+        if item == "start":
+            button = QToolButton(self)
+            button.setObjectName("panelItem")
+            button.setText("Start")
+            button.setFixedHeight(max(1, self.panel_height - 8))
+            button.clicked.connect(self.show_start_placeholder)
+            return button
+        return QWidget(self)
+
+    def rebuild_modules(self):
+        layout = self.layout()
+        while layout.count():
+            entry = layout.takeAt(0)
+            widget = entry.widget()
+            if widget is not None and widget not in (self.task_scroll, self.clock):
+                widget.deleteLater()
+        self.module_widgets = []
+        for item in self.panel_items:
+            widget = self.make_panel_item(item)
+            self.module_widgets.append(widget)
+            layout.addWidget(widget, 1 if item == "expand" else 0)
+        self.update_clock()
+
+    def show_start_placeholder(self):
+        menu = QMenu(self)
+        action = menu.addAction("Open-Shell menu integration")
+        action.setEnabled(False)
+        menu.addAction("Start menu is a placeholder for now").setEnabled(False)
+        sender = self.sender()
+        menu.exec(sender.mapToGlobal(sender.rect().bottomLeft()))
+
+    def show_panel_items(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Panel Items")
+        dialog.setMinimumSize(360, 330)
+        outer = QVBoxLayout(dialog)
+        listing = QListWidget(dialog)
+        for item in self.panel_items:
+            listing.addItem(self.ITEM_LABELS[item])
+        outer.addWidget(listing)
+
+        controls = QHBoxLayout()
+        add_button = QPushButton("Add item…", dialog)
+        remove_button = QPushButton("Remove", dialog)
+        up_button = QPushButton("Move up", dialog)
+        down_button = QPushButton("Move down", dialog)
+        for button in (add_button, remove_button, up_button, down_button):
+            controls.addWidget(button)
+        outer.addLayout(controls)
+
+        def add_item():
+            choices = list(self.ITEM_LABELS.values())
+            selected, accepted = QInputDialog.getItem(dialog, "Add panel item", "Item:", choices, 0, False)
+            if accepted:
+                key = next(k for k, value in self.ITEM_LABELS.items() if value == selected)
+                listing.addItem(self.ITEM_LABELS[key])
+
+        def move_item(delta):
+            row = listing.currentRow()
+            target = row + delta
+            if row < 0 or not 0 <= target < listing.count():
+                return
+            item = listing.takeItem(row)
+            listing.insertItem(target, item)
+            listing.setCurrentRow(target)
+
+        add_button.clicked.connect(add_item)
+        remove_button.clicked.connect(lambda: listing.takeItem(listing.currentRow()) if listing.currentRow() >= 0 else None)
+        up_button.clicked.connect(lambda: move_item(-1))
+        down_button.clicked.connect(lambda: move_item(1))
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        outer.addWidget(buttons)
+        if dialog.exec() == QDialog.Accepted:
+            reverse = {value: key for key, value in self.ITEM_LABELS.items()}
+            self.panel_items = [reverse[listing.item(i).text()] for i in range(listing.count())]
+            self.settings.setValue("panel_items", json.dumps(self.panel_items))
+            self.rebuild_modules()
 
     def show_about(self):
         QMessageBox.about(
@@ -221,10 +316,10 @@ class SecondaryTaskbar(QWidget):
 
         content_width = max(content_width, 1)
         inner_height = max(1, self.panel_height - min(8, self.panel_height - 1))
-        self.host.setFixedSize(content_width, inner_height)
+        self.task_host.setFixedSize(content_width, inner_height)
 
         # The task-list module expands into the space between menu and clock.
-        self.scroll.setMinimumWidth(0)
+        self.task_scroll.setMinimumWidth(0)
         self.scroll.setFixedHeight(inner_height)
 
     def show_settings(self):
@@ -306,7 +401,7 @@ class SecondaryTaskbar(QWidget):
             margins = self.layout().contentsMargins()
             vertical_margin = min(4, max(0, (self.panel_height - 1) // 2))
             self.layout().setContentsMargins(margins.left(), vertical_margin, margins.right(), vertical_margin)
-            self.menu_button.setFixedHeight(max(1, self.panel_height - vertical_margin * 2))
+            self.rebuild_modules()
             self.place_bar()
             self.signature = None
             self.refresh_windows()
