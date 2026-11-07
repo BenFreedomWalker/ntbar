@@ -20,7 +20,6 @@ user32.ShowWindowAsync.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.BringWindowToTop.argtypes = [wintypes.HWND]
 user32.SetForegroundWindow.argtypes = [wintypes.HWND]
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFOEXW)]
 user32.EnumWindows.restype = wintypes.BOOL
 user32.EnumDisplayMonitors.restype = wintypes.BOOL
 user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
@@ -54,7 +53,9 @@ class MONITORINFOEXW(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", RECT), ("rcWork", RECT),
                 ("dwFlags", wintypes.DWORD), ("szDevice", wintypes.WCHAR * 32)]
 
-user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFOEXW)]\n\nclass SHFILEINFOW(ctypes.Structure):
+user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFOEXW)]
+
+class SHFILEINFOW(ctypes.Structure):
     _fields_ = [("hIcon", wintypes.HICON), ("iIcon", ctypes.c_int), ("dwAttributes", wintypes.DWORD),
                 ("szDisplayName", wintypes.WCHAR * 260), ("szTypeName", wintypes.WCHAR * 80)]
 
