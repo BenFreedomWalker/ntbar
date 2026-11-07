@@ -206,6 +206,7 @@ class SecondaryTaskbar(QWidget):
             timer.stop()
         if self.registered:
             remove_appbar(int(self.winId()))
+            self.registered = False
         event.accept()
         app = QApplication.instance()
         if app is not None:
