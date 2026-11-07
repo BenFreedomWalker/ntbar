@@ -13,7 +13,7 @@ if sys.platform != "win32":
 class TaskButton(QToolButton):
     BUTTON_WIDTH = 112
 
-    def __init__(self, window, panel_height=44, show_label=True, parent=None):
+    def __init__(self, window, panel_height=44, button_width=96, show_label=True, parent=None):
         super().__init__(parent)
         self.hwnd = window.hwnd
         self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon if show_label else Qt.ToolButtonIconOnly)
@@ -24,7 +24,7 @@ class TaskButton(QToolButton):
         button_height = max(1, panel_height - 8)
         icon_size = max(8, min(20, button_height - 6))
         self.setIconSize(QSize(icon_size, icon_size))
-        self.setFixedSize(self.BUTTON_WIDTH if show_label else button_height, button_height)
+        self.setFixedSize(max(32, button_width) if show_label else button_height, button_height)
         self.setCursor(Qt.PointingHandCursor)
         self.setProperty("active", window.active)
         self.setProperty("minimized", window.minimized)
@@ -55,6 +55,7 @@ class SecondaryTaskbar(QWidget):
         self.panel_length = self.settings.value("panel_length", 100, type=int)
         self.panel_alignment = self.settings.value("panel_alignment", "center")
         self.show_task_labels = self.settings.value("show_task_labels", True, type=bool)
+        self.task_button_width = self.settings.value("task_button_width", 96, type=int)
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
@@ -198,7 +199,7 @@ class SecondaryTaskbar(QWidget):
 
         if windows:
             for window in windows:
-                self.buttons.addWidget(TaskButton(window, self.panel_height, self.show_task_labels, self.host))
+                self.buttons.addWidget(TaskButton(window, self.panel_height, self.task_button_width, self.show_task_labels, self.host))
         else:
             empty = QLabel("No open windows", self.host)
             empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
@@ -258,6 +259,13 @@ class SecondaryTaskbar(QWidget):
         length.setValue(self.panel_length)
         form.addRow("Panel length", length)
 
+        button_width = QSpinBox(dialog)
+        button_width.setRange(48, 240)
+        button_width.setSingleStep(8)
+        button_width.setSuffix(" px")
+        button_width.setValue(self.task_button_width)
+        form.addRow("Task button width", button_width)
+
         show_labels = QCheckBox("Show window titles on task buttons", dialog)
         show_labels.setChecked(self.show_task_labels)
         form.addRow("Task buttons", show_labels)
@@ -282,6 +290,7 @@ class SecondaryTaskbar(QWidget):
             self.panel_length = length.value()
             self.panel_alignment = alignment.currentData()
             self.show_task_labels = show_labels.isChecked()
+            self.task_button_width = button_width.value()
             if self.target:
                 self.settings.setValue("monitor_device", self.target["device"])
             self.settings.setValue("panel_edge", self.panel_edge)
@@ -289,6 +298,7 @@ class SecondaryTaskbar(QWidget):
             self.settings.setValue("panel_length", self.panel_length)
             self.settings.setValue("panel_alignment", self.panel_alignment)
             self.settings.setValue("show_task_labels", self.show_task_labels)
+            self.settings.setValue("task_button_width", self.task_button_width)
             self.setFixedHeight(self.panel_height)
             margins = self.layout().contentsMargins()
             vertical_margin = min(4, max(0, (self.panel_height - 1) // 2))
