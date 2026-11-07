@@ -3,8 +3,8 @@ import sys
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont, QDesktopServices
-from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy
-from PySide6.QtCore import QUrl
+from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox
+from PySide6.QtCore import QUrl, QSettings
 from win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
 
 if sys.platform != "win32":
@@ -42,15 +42,20 @@ class TaskButton(QToolButton):
         menu.exec(event.globalPos())
 
 class SecondaryTaskbar(QWidget):
-    HEIGHT = 44
+    DEFAULT_HEIGHT = 44
 
     def __init__(self):
         super().__init__()
+        self.settings = QSettings("BenFreedomWalker", "NtBar")
+        self.panel_height = self.settings.value("panel_height", self.DEFAULT_HEIGHT, type=int)
+        self.panel_edge = self.settings.value("panel_edge", "bottom")
+        self.panel_length = self.settings.value("panel_length", 100, type=int)
+        self.panel_alignment = self.settings.value("panel_alignment", "center")
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setObjectName("NtBar")
-        self.setFixedHeight(self.HEIGHT)
+        self.setFixedHeight(self.panel_height)
         self.setStyleSheet("""
             QWidget#NtBar { background:#202329; color:#f1f1f1; }
             QToolButton#menuButton { background:#292e36; color:#f1f1f1;
@@ -118,7 +123,7 @@ class SecondaryTaskbar(QWidget):
 
     def place_bar(self):
         if self.target:
-            reposition_appbar(int(self.winId()), self.target["handle"], self.HEIGHT)
+            reposition_appbar(int(self.winId()), self.target["handle"], self.panel_height, self.panel_edge, self.panel_length, self.panel_alignment)
             self.raise_()
 
     def show_menu(self):
@@ -133,7 +138,9 @@ class SecondaryTaskbar(QWidget):
             action.setChecked(bool(self.target and self.target["device"] == monitor["device"]))
             action.triggered.connect(lambda checked=False, m=monitor: self.select_monitor(m))
         menu.addSeparator()
+        menu.addAction("Settings…", self.show_settings)
         menu.addAction("Refresh windows", self.refresh_windows)
+        menu.addAction("About NtBar", self.show_about)
         menu.addSeparator()
         menu.addAction("Exit NtBar", self.close)
         menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
@@ -183,12 +190,75 @@ class SecondaryTaskbar(QWidget):
             content_width += self.buttons.spacing() * (len(windows) - 1)
 
         content_width = max(content_width, 160)
-        self.host.setFixedSize(content_width, self.HEIGHT - 8)
+        inner_height = max(1, self.panel_height - 8)
+        self.host.setFixedSize(content_width, inner_height)
 
         monitor_width = (self.target or {}).get("width", 1920)
         max_tasklist_width = max(160, int(monitor_width * 0.55))
         self.scroll.setFixedWidth(min(content_width, max_tasklist_width))
-        self.scroll.setFixedHeight(self.HEIGHT - 8)
+        self.scroll.setFixedHeight(inner_height)
+
+    def show_settings(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("NtBar Settings")
+        dialog.setMinimumWidth(320)
+        form = QFormLayout(dialog)
+
+        monitor = QComboBox(dialog)
+        monitors = monitor_list()
+        for index, item in enumerate(monitors, 1):
+            label = f'Monitor {index} — {item["width"]}×{item["height"]}'
+            if item["primary"]:
+                label += " (primary)"
+            monitor.addItem(label, item)
+            if self.target and item["device"] == self.target["device"]:
+                monitor.setCurrentIndex(monitor.count() - 1)
+        form.addRow("Display", monitor)
+
+        edge = QComboBox(dialog)
+        edge.addItem("Top", "top")
+        edge.addItem("Bottom", "bottom")
+        edge.setCurrentIndex(0 if self.panel_edge == "top" else 1)
+        form.addRow("Position", edge)
+
+        height = QSpinBox(dialog)
+        height.setRange(32, 96)
+        height.setSuffix(" px")
+        height.setValue(self.panel_height)
+        form.addRow("Panel thickness", height)
+
+        length = QSpinBox(dialog)
+        length.setRange(25, 100)
+        length.setSuffix(" %")
+        length.setValue(self.panel_length)
+        form.addRow("Panel length", length)
+
+        alignment = QComboBox(dialog)
+        for value, label in (("left", "Left"), ("center", "Center"), ("right", "Right")):
+            alignment.addItem(label, value)
+        alignment.setCurrentIndex({"left": 0, "center": 1, "right": 2}.get(self.panel_alignment, 1))
+        form.addRow("Alignment", alignment)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.button(QDialogButtonBox.Apply).setText("Apply")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+
+        if dialog.exec() == QDialog.Accepted:
+            if monitor.currentData() is not None:
+                self.target = monitor.currentData()
+            self.panel_edge = edge.currentData()
+            self.panel_height = height.value()
+            self.panel_length = length.value()
+            self.panel_alignment = alignment.currentData()
+            self.settings.setValue("panel_edge", self.panel_edge)
+            self.settings.setValue("panel_height", self.panel_height)
+            self.settings.setValue("panel_length", self.panel_length)
+            self.settings.setValue("panel_alignment", self.panel_alignment)
+            self.setFixedHeight(self.panel_height)
+            self.place_bar()
+            self.refresh_windows()
 
     def update_clock(self):
         self.clock.setText(datetime.now().strftime("%a %d %b   %H:%M"))
