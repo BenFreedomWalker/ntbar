@@ -114,7 +114,10 @@ def activate_or_minimize(hwnd):
     if hwnd == user32.GetForegroundWindow() and not user32.IsIconic(hwnd):
         user32.ShowWindowAsync(hwnd, SW_MINIMIZE)
     else:
-        user32.ShowWindowAsync(hwnd, SW_RESTORE)
+        # Restore only minimized windows. Calling SW_RESTORE on an already
+        # visible maximized window would de-maximize it.
+        if user32.IsIconic(hwnd):
+            user32.ShowWindowAsync(hwnd, SW_RESTORE)
         user32.BringWindowToTop(hwnd)
         user32.SetForegroundWindow(hwnd)
 
