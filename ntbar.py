@@ -3,7 +3,8 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont, QDesktopServices
 from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox
-from PySide6.QtCore import QUrl\nfrom win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
+from PySide6.QtCore import QUrl
+from win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
 
 if sys.platform != "win32":
     raise SystemExit("NtBar supports Windows 10 and 11.")
