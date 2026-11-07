@@ -13,6 +13,19 @@ user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
 user32.GetWindowTextLengthW.restype = ctypes.c_int
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+user32.IsWindow.argtypes = [wintypes.HWND]
+user32.IsWindowVisible.argtypes = [wintypes.HWND]
+user32.IsIconic.argtypes = [wintypes.HWND]
+user32.ShowWindowAsync.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.BringWindowToTop.argtypes = [wintypes.HWND]
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFOEXW)]
+user32.EnumWindows.restype = wintypes.BOOL
+user32.EnumDisplayMonitors.restype = wintypes.BOOL
+user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                ctypes.c_int, ctypes.c_int, wintypes.UINT]
+user32.SetWindowPos.restype = wintypes.BOOL
 user32.GetForegroundWindow.restype = wintypes.HWND
 user32.MonitorFromWindow.restype = wintypes.HMONITOR
 kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -41,7 +54,7 @@ class MONITORINFOEXW(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", RECT), ("rcWork", RECT),
                 ("dwFlags", wintypes.DWORD), ("szDevice", wintypes.WCHAR * 32)]
 
-class SHFILEINFOW(ctypes.Structure):
+user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFOEXW)]\n\nclass SHFILEINFOW(ctypes.Structure):
     _fields_ = [("hIcon", wintypes.HICON), ("iIcon", ctypes.c_int), ("dwAttributes", wintypes.DWORD),
                 ("szDisplayName", wintypes.WCHAR * 260), ("szTypeName", wintypes.WCHAR * 80)]
 
