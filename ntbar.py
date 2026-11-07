@@ -11,7 +11,7 @@ if sys.platform != "win32":
     raise SystemExit("NtBar supports Windows 10 and 11.")
 
 class TaskButton(QToolButton):
-    def __init__(self, window, parent=None):
+    def __init__(self, window, panel_height=44, parent=None):
         super().__init__(parent)
         self.hwnd = window.hwnd
         self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -19,8 +19,10 @@ class TaskButton(QToolButton):
         self.setToolTip(window.title)
         icon = load_window_icon(window.hwnd)
         self.setIcon(icon or QApplication.style().standardIcon(QStyle.SP_ComputerIcon))
-        self.setIconSize(QSize(20, 20))
-        self.setFixedHeight(36)
+        button_height = max(1, panel_height - 8)
+        icon_size = max(8, min(20, button_height - 6))
+        self.setIconSize(QSize(icon_size, icon_size))
+        self.setFixedHeight(button_height)
         self.setMinimumWidth(112)
         self.setMaximumWidth(210)
         self.setCursor(Qt.PointingHandCursor)
@@ -65,12 +67,14 @@ class SecondaryTaskbar(QWidget):
             QScrollArea { border:0; background:transparent; }
         """)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(7, 4, 7, 4)
+        vertical_margin = min(4, max(0, (self.panel_height - 1) // 2))
+        layout.setContentsMargins(7, vertical_margin, 7, vertical_margin)
         layout.setSpacing(7)
 
         self.menu_button = QToolButton(self)
         self.menu_button.setObjectName("menuButton")
         self.menu_button.setText("NtBar")
+        self.menu_button.setFixedHeight(max(1, self.panel_height - vertical_margin * 2))
         self.menu_button.clicked.connect(self.show_menu)
         layout.addWidget(self.menu_button)
         layout.addSpacing(8)
@@ -177,12 +181,12 @@ class SecondaryTaskbar(QWidget):
 
         if windows:
             for window in windows:
-                self.buttons.addWidget(TaskButton(window, self.host))
+                self.buttons.addWidget(TaskButton(window, self.panel_height, self.host))
         else:
             empty = QLabel("No open windows", self.host)
             empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             empty.setStyleSheet("color:#858d98; padding:0 10px;")
-            empty.setFixedHeight(36)
+            empty.setFixedHeight(max(1, self.panel_height - 8))
             self.buttons.addWidget(empty)
 
         self.buttons.activate()
@@ -195,12 +199,12 @@ class SecondaryTaskbar(QWidget):
             content_width += self.buttons.spacing() * (len(windows) - 1)
 
         content_width = max(content_width, 160)
-        inner_height = max(1, self.panel_height - 8)
+        inner_height = max(1, self.panel_height - min(8, self.panel_height - 1))
         self.host.setFixedSize(content_width, inner_height)
 
         monitor_width = (self.target or {}).get("width", 1920)
         panel_width = int(monitor_width * self.panel_length / 100)
-        max_tasklist_width = max(100, min(int(monitor_width * 0.55), panel_width - 250))
+        max_tasklist_width = max(1, min(int(monitor_width * 0.55), panel_width - 250))
         self.scroll.setFixedWidth(min(content_width, max_tasklist_width))
         self.scroll.setFixedHeight(inner_height)
 
@@ -228,7 +232,7 @@ class SecondaryTaskbar(QWidget):
         form.addRow("Position", edge)
 
         height = QSpinBox(dialog)
-        height.setRange(44, 96)
+        height.setRange(1, 512)
         height.setSuffix(" px")
         height.setValue(self.panel_height)
         form.addRow("Panel thickness", height)
@@ -265,6 +269,10 @@ class SecondaryTaskbar(QWidget):
             self.settings.setValue("panel_length", self.panel_length)
             self.settings.setValue("panel_alignment", self.panel_alignment)
             self.setFixedHeight(self.panel_height)
+            margins = self.layout().contentsMargins()
+            vertical_margin = min(4, max(0, (self.panel_height - 1) // 2))
+            self.layout().setContentsMargins(margins.left(), vertical_margin, margins.right(), vertical_margin)
+            self.menu_button.setFixedHeight(max(1, self.panel_height - vertical_margin * 2))
             self.place_bar()
             self.refresh_windows()
 
