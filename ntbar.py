@@ -85,7 +85,7 @@ class SecondaryTaskbar(QWidget):
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll.setMinimumWidth(160)
+        self.scroll.setMinimumWidth(0)
         self.host = QWidget()
         self.buttons = QHBoxLayout(self.host)
         self.buttons.setContentsMargins(0, 0, 0, 0)
@@ -131,7 +131,12 @@ class SecondaryTaskbar(QWidget):
 
     def place_bar(self):
         if self.target:
-            reposition_appbar(int(self.winId()), self.target["handle"], self.panel_height, self.panel_edge, self.panel_length, self.panel_alignment)
+            geometry = reposition_appbar(
+                int(self.winId()), self.target["handle"], self.panel_height,
+                self.panel_edge, self.panel_length, self.panel_alignment
+            )
+            if geometry:
+                self.setGeometry(*geometry)
             self.raise_()
 
     def show_menu(self):
@@ -198,7 +203,7 @@ class SecondaryTaskbar(QWidget):
         if len(windows) > 1:
             content_width += self.buttons.spacing() * (len(windows) - 1)
 
-        content_width = max(content_width, 160)
+        content_width = max(content_width, 1)
         inner_height = max(1, self.panel_height - min(8, self.panel_height - 1))
         self.host.setFixedSize(content_width, inner_height)
 
@@ -274,6 +279,7 @@ class SecondaryTaskbar(QWidget):
             self.layout().setContentsMargins(margins.left(), vertical_margin, margins.right(), vertical_margin)
             self.menu_button.setFixedHeight(max(1, self.panel_height - vertical_margin * 2))
             self.place_bar()
+            self.signature = None
             self.refresh_windows()
 
     def update_clock(self):
