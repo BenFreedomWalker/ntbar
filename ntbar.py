@@ -318,9 +318,9 @@ class SecondaryTaskbar(QWidget):
         inner_height = max(1, self.panel_height - min(8, self.panel_height - 1))
         self.task_host.setFixedSize(content_width, inner_height)
 
-        # The task-list module expands into the space between menu and clock.
         self.task_scroll.setMinimumWidth(0)
-        self.task_scroll.setFixedHeight(inner_height)
+        available_width = max(1, self.width() - 14)
+        self.task_scroll.setFixedSize(min(content_width, available_width), inner_height)
 
     def show_settings(self):
         dialog = QDialog(self)
