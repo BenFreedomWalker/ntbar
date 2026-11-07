@@ -31,7 +31,7 @@ class TaskButton(QToolButton):
         self.setProperty("minimized", window.minimized)
         self.setStyleSheet("""
             QToolButton { color:#e8e8e8; background:#30343b; border:1px solid #414750;
-                border-radius:5px; padding:4px 9px; text-align:left; }
+                border-radius:0; padding:4px 9px; text-align:left; }
             QToolButton:hover { background:#414852; border-color:#626d7b; }
             QToolButton[active="true"] { background:#46566b; border-bottom:2px solid #79a9e8; }
             QToolButton[minimized="true"] { color:#aeb5bf; }
