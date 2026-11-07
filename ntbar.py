@@ -119,7 +119,11 @@ class SecondaryTaskbar(QWidget):
 
     def default_monitor(self):
         monitors = monitor_list()
-        return next((m for m in monitors if not m["primary"]), monitors[0] if monitors else None)
+        saved_device = self.settings.value("monitor_device", "")
+        return (
+            next((m for m in monitors if m["device"] == saved_device), None)
+            or next((m for m in monitors if not m["primary"]), monitors[0] if monitors else None)
+        )
 
     def place_bar(self):
         if self.target:
@@ -155,6 +159,7 @@ class SecondaryTaskbar(QWidget):
 
     def select_monitor(self, monitor):
         self.target = monitor
+        self.settings.setValue("monitor_device", monitor["device"])
         self.place_bar()
 
     def refresh_windows(self):
@@ -194,7 +199,8 @@ class SecondaryTaskbar(QWidget):
         self.host.setFixedSize(content_width, inner_height)
 
         monitor_width = (self.target or {}).get("width", 1920)
-        max_tasklist_width = max(160, int(monitor_width * 0.55))
+        panel_width = int(monitor_width * self.panel_length / 100)
+        max_tasklist_width = max(100, min(int(monitor_width * 0.55), panel_width - 250))
         self.scroll.setFixedWidth(min(content_width, max_tasklist_width))
         self.scroll.setFixedHeight(inner_height)
 
@@ -222,7 +228,7 @@ class SecondaryTaskbar(QWidget):
         form.addRow("Position", edge)
 
         height = QSpinBox(dialog)
-        height.setRange(32, 96)
+        height.setRange(44, 96)
         height.setSuffix(" px")
         height.setValue(self.panel_height)
         form.addRow("Panel thickness", height)
@@ -239,8 +245,8 @@ class SecondaryTaskbar(QWidget):
         alignment.setCurrentIndex({"left": 0, "center": 1, "right": 2}.get(self.panel_alignment, 1))
         form.addRow("Alignment", alignment)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel, parent=dialog)
-        buttons.button(QDialogButtonBox.Apply).setText("Apply")
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.button(QDialogButtonBox.Ok).setText("Apply")
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
@@ -252,6 +258,8 @@ class SecondaryTaskbar(QWidget):
             self.panel_height = height.value()
             self.panel_length = length.value()
             self.panel_alignment = alignment.currentData()
+            if self.target:
+                self.settings.setValue("monitor_device", self.target["device"])
             self.settings.setValue("panel_edge", self.panel_edge)
             self.settings.setValue("panel_height", self.panel_height)
             self.settings.setValue("panel_length", self.panel_length)
