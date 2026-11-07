@@ -1,3 +1,4 @@
+import signal
 import sys
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QSize
@@ -74,6 +75,8 @@ class SecondaryTaskbar(QWidget):
         self.scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setMinimumWidth(160)
         self.host = QWidget()
         self.buttons = QHBoxLayout(self.host)
         self.buttons.setContentsMargins(0, 0, 0, 0)
@@ -153,18 +156,38 @@ class SecondaryTaskbar(QWidget):
         if signature == self.signature:
             return
         self.signature = signature
+
         while self.buttons.count():
             item = self.buttons.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        for window in windows:
-            self.buttons.addWidget(TaskButton(window, self.host))
-        self.buttons.addStretch(1)
-        self.host.adjustSize()
-        content_width = self.host.sizeHint().width()
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if windows:
+            for window in windows:
+                self.buttons.addWidget(TaskButton(window, self.host))
+        else:
+            empty = QLabel("No open windows", self.host)
+            empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            empty.setStyleSheet("color:#858d98; padding:0 10px;")
+            empty.setFixedHeight(36)
+            self.buttons.addWidget(empty)
+
+        self.buttons.activate()
+        content_width = sum(
+            self.buttons.itemAt(i).widget().sizeHint().width()
+            for i in range(self.buttons.count())
+            if self.buttons.itemAt(i).widget() is not None
+        )
+        if len(windows) > 1:
+            content_width += self.buttons.spacing() * (len(windows) - 1)
+
+        content_width = max(content_width, 160)
+        self.host.setFixedSize(content_width, self.HEIGHT - 8)
+
         monitor_width = (self.target or {}).get("width", 1920)
         max_tasklist_width = max(160, int(monitor_width * 0.55))
-        self.scroll.setFixedWidth(min(max(content_width, 1), max_tasklist_width))
+        self.scroll.setFixedWidth(min(content_width, max_tasklist_width))
         self.scroll.setFixedHeight(self.HEIGHT - 8)
 
     def update_clock(self):
@@ -184,12 +207,25 @@ class SecondaryTaskbar(QWidget):
         if self.registered:
             remove_appbar(int(self.winId()))
         event.accept()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("NtBar")
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
+    interrupt_timer = QTimer()
+    interrupt_timer.timeout.connect(lambda: None)
+    interrupt_timer.start(200)
+    app._interrupt_timer = interrupt_timer
+
     bar = SecondaryTaskbar()
-    sys.exit(app.exec())
+    return_code = app.exec()
+    if bar.registered:
+        remove_appbar(int(bar.winId()))
+        bar.registered = False
+    sys.exit(return_code)
 
 if __name__ == "__main__":
     main()
