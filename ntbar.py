@@ -240,7 +240,12 @@ class SecondaryTaskbar(QWidget):
 
         def add_item():
             unique_items = {"start", "tasks", "clock"}
-            present = {key for key in self.panel_items if key in unique_items}
+            label_keys = {value: key for key, value in self.ITEM_LABELS.items()}
+            present = {
+                label_keys[listing.item(i).text()]
+                for i in range(listing.count())
+                if label_keys[listing.item(i).text()] in unique_items
+            }
             choices = [value for key, value in self.ITEM_LABELS.items() if key not in present]
             if not choices:
                 return
