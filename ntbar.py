@@ -2,7 +2,7 @@ import sys
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont, QDesktopServices
-from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox
+from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy
 from PySide6.QtCore import QUrl
 from win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
 
@@ -67,10 +67,11 @@ class SecondaryTaskbar(QWidget):
         self.menu_button.setText("NtBar")
         self.menu_button.clicked.connect(self.show_menu)
         layout.addWidget(self.menu_button)
-        layout.addWidget(self.make_separator())
+        layout.addSpacing(8)
 
         self.scroll = QScrollArea(self)
-        self.scroll.setWidgetResizable(True)
+        self.scroll.setWidgetResizable(False)
+        self.scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.host = QWidget()
@@ -78,13 +79,14 @@ class SecondaryTaskbar(QWidget):
         self.buttons.setContentsMargins(0, 0, 0, 0)
         self.buttons.setSpacing(5)
         self.scroll.setWidget(self.host)
-        layout.addWidget(self.scroll, 1)
-        layout.addWidget(self.make_separator())
+        layout.addWidget(self.scroll)
+        layout.addSpacing(8)
 
         self.clock = QLabel(self)
         self.clock.setObjectName("clock")
         self.clock.setFont(QFont("Segoe UI", 9))
         layout.addWidget(self.clock)
+        layout.addStretch(1)
 
         self.target = None
         self.signature = None
@@ -106,14 +108,6 @@ class SecondaryTaskbar(QWidget):
         self.monitor_timer = QTimer(self)
         self.monitor_timer.timeout.connect(self.check_monitors)
         self.monitor_timer.start(2500)
-
-    def make_separator(self):
-        separator = QFrame(self)
-        separator.setFrameShape(QFrame.VLine)
-        separator.setFrameShadow(QFrame.Plain)
-        separator.setFixedWidth(1)
-        separator.setStyleSheet("QFrame { color:#414750; background:#414750; max-width:1px; }")
-        return separator
 
     def default_monitor(self):
         monitors = monitor_list()
@@ -166,6 +160,12 @@ class SecondaryTaskbar(QWidget):
         for window in windows:
             self.buttons.addWidget(TaskButton(window, self.host))
         self.buttons.addStretch(1)
+        self.host.adjustSize()
+        content_width = self.host.sizeHint().width()
+        monitor_width = (self.target or {}).get("width", 1920)
+        max_tasklist_width = max(160, int(monitor_width * 0.55))
+        self.scroll.setFixedWidth(min(max(content_width, 1), max_tasklist_width))
+        self.scroll.setFixedHeight(self.HEIGHT - 8)
 
     def update_clock(self):
         self.clock.setText(datetime.now().strftime("%a %d %b   %H:%M"))
