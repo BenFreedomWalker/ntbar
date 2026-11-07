@@ -239,7 +239,11 @@ class SecondaryTaskbar(QWidget):
         outer.addLayout(controls)
 
         def add_item():
-            choices = list(self.ITEM_LABELS.values())
+            unique_items = {"start", "tasks", "clock"}
+            present = {key for key in self.panel_items if key in unique_items}
+            choices = [value for key, value in self.ITEM_LABELS.items() if key not in present]
+            if not choices:
+                return
             selected, accepted = QInputDialog.getItem(dialog, "Add panel item", "Item:", choices, 0, False)
             if accepted:
                 key = next(k for k, value in self.ITEM_LABELS.items() if value == selected)
