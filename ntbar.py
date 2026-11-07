@@ -25,6 +25,7 @@ class TaskButton(QToolButton):
         icon_size = max(8, min(20, button_height - 6))
         self.setIconSize(QSize(icon_size, icon_size))
         self.setFixedSize(max(32, button_width) if show_label else button_height, button_height)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setCursor(Qt.PointingHandCursor)
         self.setProperty("active", window.active)
         self.setProperty("minimized", window.minimized)
@@ -93,6 +94,8 @@ class SecondaryTaskbar(QWidget):
         self.buttons = QHBoxLayout(self.host)
         self.buttons.setContentsMargins(0, 0, 0, 0)
         self.buttons.setSpacing(2)
+        self.buttons.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.scroll.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.scroll.setWidget(self.host)
 
         self.clock = QLabel(self)
@@ -209,7 +212,7 @@ class SecondaryTaskbar(QWidget):
 
         self.buttons.activate()
         content_width = sum(
-            self.buttons.itemAt(i).widget().sizeHint().width()
+            self.buttons.itemAt(i).widget().width()
             for i in range(self.buttons.count())
             if self.buttons.itemAt(i).widget() is not None
         )
