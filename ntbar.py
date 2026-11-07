@@ -11,7 +11,7 @@ if sys.platform != "win32":
     raise SystemExit("NtBar supports Windows 10 and 11.")
 
 class TaskButton(QToolButton):
-    BUTTON_WIDTH = 160
+    BUTTON_WIDTH = 112
 
     def __init__(self, window, panel_height=44, show_label=True, parent=None):
         super().__init__(parent)
@@ -87,9 +87,11 @@ class SecondaryTaskbar(QWidget):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setMinimumWidth(0)
         self.host = QWidget()
+        self.host.setAttribute(Qt.WA_StyledBackground, True)
+        self.host.setStyleSheet('background:transparent;')
         self.buttons = QHBoxLayout(self.host)
         self.buttons.setContentsMargins(0, 0, 0, 0)
-        self.buttons.setSpacing(5)
+        self.buttons.setSpacing(2)
         self.scroll.setWidget(self.host)
 
         self.clock = QLabel(self)
