@@ -336,6 +336,7 @@ class SecondaryTaskbar(QWidget):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("NtBar")
+    app.setQuitOnLastWindowClosed(False)
     signal.signal(signal.SIGINT, lambda *_: app.quit())
     interrupt_timer = QTimer()
     interrupt_timer.timeout.connect(lambda: None)
