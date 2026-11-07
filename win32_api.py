@@ -163,7 +163,7 @@ def reposition_appbar(hwnd, monitor_handle, thickness, edge="bottom", length_per
     edge_map = {"left": ABE_LEFT, "top": ABE_TOP, "right": ABE_RIGHT, "bottom": ABE_BOTTOM}
     data.uEdge = edge_map.get(edge, ABE_BOTTOM)
 
-    # Reserve the full edge so maximized windows do not overlap the panel.
+    # Reserve the full monitor edge with the shell, independent of visible panel length.
     if edge in ("top", "bottom"):
         data.rc = RECT(monitor.left, monitor.top, monitor.right, monitor.top + thickness)
         if edge == "bottom":
@@ -186,28 +186,26 @@ def reposition_appbar(hwnd, monitor_handle, thickness, edge="bottom", length_per
         data.rc.left = data.rc.right - thickness
     shell32.SHAppBarMessage(ABM_SETPOS, ctypes.byref(data))
 
-    # The native reservation spans the whole edge; the visible panel can be shorter.
-    visible = data.rc
-    percent = max(25, min(100, int(length_percent))) / 100.0
+    percent = max(1, min(100, int(length_percent))) / 100.0
     if edge in ("top", "bottom"):
-        full = visible.right - visible.left
-        width = max(1, int(full * percent))
+        full = monitor.right - monitor.left
+        width = max(1, min(full, round(full * percent)))
         if alignment == "left":
-            left = visible.left
+            left = monitor.left
         elif alignment == "right":
-            left = visible.right - width
+            left = monitor.right - width
         else:
-            left = visible.left + (full - width) // 2
-        top = visible.top
+            left = monitor.left + (full - width) // 2
+        top = data.rc.top if edge == "top" else data.rc.bottom - thickness
         user32.SetWindowPos(hwnd, -1, left, top, width, thickness, 0x0010 | 0x0040)
     else:
-        full = visible.bottom - visible.top
-        height = max(1, int(full * percent))
+        full = monitor.bottom - monitor.top
+        height = max(1, min(full, round(full * percent)))
         if alignment == "left":
-            top = visible.top
+            top = monitor.top
         elif alignment == "right":
-            top = visible.bottom - height
+            top = monitor.bottom - height
         else:
-            top = visible.top + (full - height) // 2
-        left = visible.left
+            top = monitor.top + (full - height) // 2
+        left = data.rc.left if edge == "left" else data.rc.right - thickness
         user32.SetWindowPos(hwnd, -1, left, top, thickness, height, 0x0010 | 0x0040)
