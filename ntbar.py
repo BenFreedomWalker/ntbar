@@ -67,6 +67,7 @@ class SecondaryTaskbar(QWidget):
         self.menu_button.setText("NtBar")
         self.menu_button.clicked.connect(self.show_menu)
         layout.addWidget(self.menu_button)
+        layout.addWidget(self.make_separator())
 
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(True)
@@ -78,6 +79,7 @@ class SecondaryTaskbar(QWidget):
         self.buttons.setSpacing(5)
         self.scroll.setWidget(self.host)
         layout.addWidget(self.scroll, 1)
+        layout.addWidget(self.make_separator())
 
         self.clock = QLabel(self)
         self.clock.setObjectName("clock")
@@ -104,6 +106,14 @@ class SecondaryTaskbar(QWidget):
         self.monitor_timer = QTimer(self)
         self.monitor_timer.timeout.connect(self.check_monitors)
         self.monitor_timer.start(2500)
+
+    def make_separator(self):
+        separator = QFrame(self)
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Plain)
+        separator.setFixedWidth(1)
+        separator.setStyleSheet("QFrame { color:#414750; background:#414750; max-width:1px; }")
+        return separator
 
     def default_monitor(self):
         monitors = monitor_list()
