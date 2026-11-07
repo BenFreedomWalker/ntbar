@@ -41,7 +41,7 @@ SW_MINIMIZE = 6
 SW_RESTORE = 9
 WM_CLOSE = 0x10
 ABM_NEW, ABM_REMOVE, ABM_QUERYPOS, ABM_SETPOS = 0, 1, 2, 3
-ABE_BOTTOM = 3
+ABE_LEFT, ABE_TOP, ABE_RIGHT, ABE_BOTTOM = 0, 1, 2, 3
 
 class RECT(ctypes.Structure):
     _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG), ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
@@ -150,18 +150,64 @@ def remove_appbar(hwnd):
     data.hWnd = hwnd
     shell32.SHAppBarMessage(ABM_REMOVE, ctypes.byref(data))
 
-def reposition_appbar(hwnd, monitor_handle, height):
+def reposition_appbar(hwnd, monitor_handle, thickness, edge="bottom", length_percent=100, alignment="center"):
     info = MONITORINFOEXW()
     info.cbSize = ctypes.sizeof(info)
     if not user32.GetMonitorInfoW(monitor_handle, ctypes.byref(info)):
         return
+
+    monitor = info.rcMonitor
     data = APPBARDATA()
     data.cbSize = ctypes.sizeof(data)
     data.hWnd = hwnd
-    data.uEdge = ABE_BOTTOM
-    data.rc = RECT(info.rcMonitor.left, info.rcMonitor.bottom-height, info.rcMonitor.right, info.rcMonitor.bottom)
+    edge_map = {"left": ABE_LEFT, "top": ABE_TOP, "right": ABE_RIGHT, "bottom": ABE_BOTTOM}
+    data.uEdge = edge_map.get(edge, ABE_BOTTOM)
+
+    # Reserve the full edge so maximized windows do not overlap the panel.
+    if edge in ("top", "bottom"):
+        data.rc = RECT(monitor.left, monitor.top, monitor.right, monitor.top + thickness)
+        if edge == "bottom":
+            data.rc.top = monitor.bottom - thickness
+            data.rc.bottom = monitor.bottom
+    else:
+        data.rc = RECT(monitor.left, monitor.top, monitor.left + thickness, monitor.bottom)
+        if edge == "right":
+            data.rc.left = monitor.right - thickness
+            data.rc.right = monitor.right
+
     shell32.SHAppBarMessage(ABM_QUERYPOS, ctypes.byref(data))
-    data.rc.top = data.rc.bottom-height
+    if edge == "top":
+        data.rc.bottom = data.rc.top + thickness
+    elif edge == "bottom":
+        data.rc.top = data.rc.bottom - thickness
+    elif edge == "left":
+        data.rc.right = data.rc.left + thickness
+    else:
+        data.rc.left = data.rc.right - thickness
     shell32.SHAppBarMessage(ABM_SETPOS, ctypes.byref(data))
-    user32.SetWindowPos(hwnd, -1, data.rc.left, data.rc.top, data.rc.right-data.rc.left,
-                        data.rc.bottom-data.rc.top, 0x0010 | 0x0040)
+
+    # The native reservation spans the whole edge; the visible panel can be shorter.
+    visible = data.rc
+    percent = max(25, min(100, int(length_percent))) / 100.0
+    if edge in ("top", "bottom"):
+        full = visible.right - visible.left
+        width = max(1, int(full * percent))
+        if alignment == "left":
+            left = visible.left
+        elif alignment == "right":
+            left = visible.right - width
+        else:
+            left = visible.left + (full - width) // 2
+        top = visible.top
+        user32.SetWindowPos(hwnd, -1, left, top, width, thickness, 0x0010 | 0x0040)
+    else:
+        full = visible.bottom - visible.top
+        height = max(1, int(full * percent))
+        if alignment == "left":
+            top = visible.top
+        elif alignment == "right":
+            top = visible.bottom - height
+        else:
+            top = visible.top + (full - height) // 2
+        left = visible.left
+        user32.SetWindowPos(hwnd, -1, left, top, thickness, height, 0x0010 | 0x0040)
