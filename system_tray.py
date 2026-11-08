@@ -209,6 +209,10 @@ def activate_notification_icon(entry, right_click=False):
     user32.mouse_event(flags, 0, 0, 0, 0)
     return True
 
+_shared_events = None
+_shared_provider = None
+_shared_users = 0
+
 class SystemTrayWidget(QWidget):
     def __init__(self, config, panel_height, parent=None):
         super().__init__(parent)
@@ -216,9 +220,16 @@ class SystemTrayWidget(QWidget):
         self.panel_height = panel_height
         self.icon_size = max(8, min(48, int(config.get("icon_size", 18))))
         self.entries = {}
-        self.events = TrayEvents(self)
+        global _shared_events, _shared_provider, _shared_users
+        if _shared_events is None:
+            _shared_events = TrayEvents()
+            _shared_provider = WindowsNotificationArea(_shared_events)
+            _shared_provider.start()
+        self.events = _shared_events
         self.events.changed.connect(self.on_notification_changed)
-        self.provider = WindowsNotificationArea(self.events)
+        self._connected = True
+        _shared_users += 1
+        self.setToolTip(_shared_provider.error or "Windows notification area")
 
         self.row = QHBoxLayout(self)
         self.row.setContentsMargins(4, 0, 4, 0)
@@ -255,7 +266,19 @@ class SystemTrayWidget(QWidget):
         return QSize(max(1, len(self.entries) * (self.icon_size + 8) + 8), self.panel_height)
 
     def shutdown(self):
-        self.provider.stop()
+        global _shared_events, _shared_provider, _shared_users
+        if not self._connected:
+            return
+        self._connected = False
+        try:
+            self.events.changed.disconnect(self.on_notification_changed)
+        except (RuntimeError, TypeError):
+            pass
+        _shared_users = max(0, _shared_users - 1)
+        if _shared_users == 0 and _shared_provider is not None:
+            _shared_provider.stop()
+            _shared_provider = None
+            _shared_events = None
 
     def closeEvent(self, event):
         self.shutdown()
