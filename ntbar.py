@@ -193,7 +193,7 @@ class SecondaryTaskbar(QWidget):
         if kind == "launcher":
             return {"name": "Launcher", "icon": "", "command": "", "margin_x": 10, "margin_y": 2, "icon_size": 24, "font_family": "Segoe UI", "font_size": 9, "corner_radius": 0}
         if kind == "system_tray":
-            return {"icon_size": 18, "spacing": 2, "font_family": "Segoe UI", "font_size": 9, "corner_radius": 0}
+            return {"icon_size": 18, "spacing": 2}
         return {}
 
     def load_items(self):
@@ -577,7 +577,7 @@ class SecondaryTaskbar(QWidget):
         dialog.setWindowTitle(f"{self.ITEM_LABELS[kind]} Settings")
         form = QFormLayout(dialog)
 
-        if kind != "separator":
+        if kind in ("clock", "tasks", "start", "launcher"):
             font_family = QFontComboBox(dialog)
             font_family.setCurrentFont(QFont(str(config.get("font_family", "Segoe UI"))))
             form.addRow("Font", font_family)
@@ -745,7 +745,7 @@ class SecondaryTaskbar(QWidget):
         if dialog.exec() != QDialog.Accepted:
             return False
 
-        if kind != "separator":
+        if kind in ("clock", "tasks", "start", "launcher"):
             config.update(font_family=font_family.currentFont().family(), font_size=font_size.value(), corner_radius=corner_radius.value())
         if kind == "clock":
             config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(),
