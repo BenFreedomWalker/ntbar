@@ -1,6 +1,9 @@
 import signal
 import sys
 import json
+import os
+import subprocess
+import winreg
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont, QDesktopServices
@@ -193,7 +196,7 @@ class SecondaryTaskbar(QWidget):
             button.setObjectName("panelItem")
             button.setText("Start")
             button.setFixedHeight(max(1, self.panel_height - 8))
-            button.clicked.connect(self.show_start_placeholder)
+            button.clicked.connect(self.open_start_menu)
             return button
         return QWidget(self)
 
@@ -211,13 +214,34 @@ class SecondaryTaskbar(QWidget):
             layout.addWidget(widget, 1 if item == "expand" else 0)
         self.update_clock()
 
-    def show_start_placeholder(self):
-        menu = QMenu(self)
-        action = menu.addAction("Open-Shell menu integration")
-        action.setEnabled(False)
-        menu.addAction("Start menu is a placeholder for now").setEnabled(False)
-        sender = self.sender()
-        menu.exec(sender.mapToGlobal(sender.rect().bottomLeft()))
+    def open_start_menu(self):
+        candidates = []
+        for key_path in (
+            r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\StartMenu.exe",
+            r"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths\\StartMenu.exe",
+        ):
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+                    candidates.append(winreg.QueryValue(key, None))
+            except OSError:
+                pass
+
+        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):
+            if base:
+                candidates.append(os.path.join(base, "Open-Shell", "StartMenu.exe"))
+
+        executable = next((path for path in candidates if path and os.path.isfile(path)), None)
+        if not executable:
+            QMessageBox.information(
+                self, "Open-Shell not found",
+                "Install Open-Shell to use this Start button. NtBar will open its menu here once Open-Shell is installed."
+            )
+            return
+        try:
+            subprocess.Popen([executable, "-togglenew"], close_fds=True)
+        except OSError as error:
+            QMessageBox.warning(self, "Open-Shell", f"Could not open the Start menu.\\n{error}")
+
 
     def show_panel_items(self):
         dialog = QDialog(self)
