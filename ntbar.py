@@ -42,12 +42,12 @@ class TaskButton(QToolButton):
         self.setCursor(Qt.PointingHandCursor)
         self.setProperty("active", window.active)
         self.setProperty("minimized", window.minimized)
-        self.setStyleSheet("""
-            QToolButton { color:#e8e8e8; background:#30343b; border:1px solid #414750;
-                border-radius:0; padding:{self.margin_y}px {self.margin_x}px; text-align:left; }
-            QToolButton:hover { background:#414852; border-color:#626d7b; }
-            QToolButton[active="true"] { background:#46566b; border-bottom:2px solid #79a9e8; }
-            QToolButton[minimized="true"] { color:#aeb5bf; }
+        self.setStyleSheet(f"""
+            QToolButton {{ color:#e8e8e8; background:#30343b; border:1px solid #414750;
+                border-radius:0; padding:{self.margin_y}px {self.margin_x}px; text-align:left; }}
+            QToolButton:hover {{ background:#414852; border-color:#626d7b; }}
+            QToolButton[active="true"] {{ background:#46566b; border-bottom:2px solid #79a9e8; }}
+            QToolButton[minimized="true"] {{ color:#aeb5bf; }}
         """)
         self.clicked.connect(lambda: activate_or_minimize(self.hwnd))
 
@@ -129,14 +129,7 @@ class SecondaryTaskbar(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setObjectName("NtBar")
         self.setFixedHeight(self.panel_height)
-        self.setStyleSheet("""
-            QWidget#NtBar { background:{self.panel_color}; color:#f1f1f1; }
-            QToolButton#panelItem { background:#292e36; color:#f1f1f1;
-                border:1px solid #3c424c; border-radius:0; padding:4px 10px; }
-            QToolButton#panelItem:hover { background:#3b424d; }
-            QLabel#clock { color:#e2e5e9; padding:0; }
-            QScrollArea { border:0; background:transparent; }
-        """)
+        self.apply_panel_style()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -186,6 +179,16 @@ class SecondaryTaskbar(QWidget):
         self.monitor_timer = QTimer(self)
         self.monitor_timer.timeout.connect(self.check_monitors)
         self.monitor_timer.start(2500)
+
+    def apply_panel_style(self):
+        self.setStyleSheet(f"""
+            QWidget#NtBar {{ background:{self.panel_color}; color:#f1f1f1; }}
+            QToolButton#panelItem {{ background:#292e36; color:#f1f1f1;
+                border:1px solid #3c424c; border-radius:0; padding:4px 10px; }}
+            QToolButton#panelItem:hover {{ background:#3b424d; }}
+            QLabel#clock {{ color:#e2e5e9; padding:0; }}
+            QScrollArea {{ border:0; background:transparent; }}
+        """)
 
     def default_monitor(self):
         monitors = monitor_list()
@@ -582,10 +585,7 @@ class SecondaryTaskbar(QWidget):
             self.settings.setValue("clock_show_seconds", self.clock_show_seconds)
             self.settings.setValue("clock_font_size", self.clock_font_size)
             self.clock.setFont(QFont("Segoe UI", self.clock_font_size))
-            self.setStyleSheet(self.styleSheet().replace(
-                "QWidget#NtBar { background:#202329; color:#f1f1f1; }",
-                f"QWidget#NtBar {{ background:{self.panel_color}; color:#f1f1f1; }}"
-            ))
+            self.apply_panel_style()
             self.update_clock()
             self.setFixedHeight(self.panel_height)
             self.layout().setContentsMargins(0, 0, 0, 0)
