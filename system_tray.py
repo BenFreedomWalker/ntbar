@@ -4,7 +4,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal, Qt, QSize
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QToolButton, QMenu, QFileIconProvider
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QToolButton, QMenu, QFileIconProvider, QSizePolicy
 from PySide6.QtCore import QFileInfo
 
 try:
@@ -224,7 +224,7 @@ class SystemTrayWidget(QWidget):
         self.row.setContentsMargins(4, 0, 4, 0)
         self.row.setSpacing(max(0, int(config.get("spacing", 2))))
         self.row.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        self.setSizePolicy(self.sizePolicy().Fixed, self.sizePolicy().Fixed)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setFixedHeight(max(1, panel_height))
 
         self.provider.start()
@@ -254,6 +254,9 @@ class SystemTrayWidget(QWidget):
     def sizeHint(self):
         return QSize(max(1, len(self.entries) * (self.icon_size + 8) + 8), self.panel_height)
 
-    def closeEvent(self, event):
+    def shutdown(self):
         self.provider.stop()
+
+    def closeEvent(self, event):
+        self.shutdown()
         super().closeEvent(event)
