@@ -7,8 +7,8 @@ import subprocess
 import winreg
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QFont, QDesktopServices
-from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QCheckBox, QListWidget, QPushButton, QVBoxLayout, QInputDialog
+from PySide6.QtGui import QFont, QDesktopServices, QFontMetrics
+from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QCheckBox, QListWidget, QPushButton, QVBoxLayout, QInputDialog, QColorDialog
 from PySide6.QtCore import QUrl, QSettings
 from win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
 
@@ -18,16 +18,24 @@ if sys.platform != "win32":
 class TaskButton(QToolButton):
     BUTTON_WIDTH = 112
 
-    def __init__(self, window, panel_height=44, button_width=96, show_label=True, parent=None):
+    def __init__(self, window, panel_height=44, button_width=96, show_label=True, margin_x=9, margin_y=4, parent=None):
         super().__init__(parent)
         self.hwnd = window.hwnd
+        self.show_label = show_label
+        self.original_title = window.title
+        self.margin_x = max(0, margin_x)
+        self.margin_y = max(0, margin_y)
+        self.scroll_offset = 0
+        self.marquee_timer = QTimer(self)
+        self.marquee_timer.setInterval(180)
+        self.marquee_timer.timeout.connect(self.advance_marquee)
         self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon if show_label else Qt.ToolButtonIconOnly)
         self.setText(window.title if show_label else "")
         self.setToolTip(window.title)
         icon = load_window_icon(window.hwnd)
         self.setIcon(icon or QApplication.style().standardIcon(QStyle.SP_ComputerIcon))
         button_height = max(1, panel_height)
-        icon_size = max(8, min(20, button_height - 6))
+        icon_size = max(8, button_height - (2 * self.margin_y) - 2)
         self.setIconSize(QSize(icon_size, icon_size))
         self.setFixedSize(max(32, button_width) if show_label else button_height, button_height)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -36,12 +44,47 @@ class TaskButton(QToolButton):
         self.setProperty("minimized", window.minimized)
         self.setStyleSheet("""
             QToolButton { color:#e8e8e8; background:#30343b; border:1px solid #414750;
-                border-radius:0; padding:4px 9px; text-align:left; }
+                border-radius:0; padding:{self.margin_y}px {self.margin_x}px; text-align:left; }
             QToolButton:hover { background:#414852; border-color:#626d7b; }
             QToolButton[active="true"] { background:#46566b; border-bottom:2px solid #79a9e8; }
             QToolButton[minimized="true"] { color:#aeb5bf; }
         """)
         self.clicked.connect(lambda: activate_or_minimize(self.hwnd))
+
+    def marquee_text(self):
+        if not self.show_label or not self.original_title:
+            return
+        available = max(1, self.width() - self.iconSize().width() - (2 * self.margin_x) - 28)
+        metrics = QFontMetrics(self.font())
+        if metrics.horizontalAdvance(self.original_title) <= available:
+            self.setText(self.original_title)
+            return
+        stream = self.original_title + "     " + self.original_title
+        start = self.scroll_offset % (len(self.original_title) + 5)
+        visible = ""
+        for char in stream[start:]:
+            candidate = visible + char
+            if metrics.horizontalAdvance(candidate) > available:
+                break
+            visible = candidate
+        self.setText(visible)
+
+    def advance_marquee(self):
+        self.scroll_offset += 1
+        self.marquee_text()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        if self.show_label:
+            self.scroll_offset = 0
+            self.marquee_text()
+            self.marquee_timer.start()
+
+    def leaveEvent(self, event):
+        self.marquee_timer.stop()
+        self.scroll_offset = 0
+        self.setText(self.original_title if self.show_label else "")
+        super().leaveEvent(event)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -69,6 +112,9 @@ class SecondaryTaskbar(QWidget):
         self.panel_alignment = self.settings.value("panel_alignment", "center")
         self.show_task_labels = self.settings.value("show_task_labels", True, type=bool)
         self.task_button_width = self.settings.value("task_button_width", 96, type=int)
+        self.task_margin_x = self.settings.value("task_margin_x", 9, type=int)
+        self.task_margin_y = self.settings.value("task_margin_y", 4, type=int)
+        self.panel_color = self.settings.value("panel_color", "#202329")
         self.clock_show_date = self.settings.value("clock_show_date", True, type=bool)
         self.clock_show_seconds = self.settings.value("clock_show_seconds", False, type=bool)
         self.clock_font_size = self.settings.value("clock_font_size", 9, type=int)
@@ -84,7 +130,7 @@ class SecondaryTaskbar(QWidget):
         self.setObjectName("NtBar")
         self.setFixedHeight(self.panel_height)
         self.setStyleSheet("""
-            QWidget#NtBar { background:#202329; color:#f1f1f1; }
+            QWidget#NtBar { background:{self.panel_color}; color:#f1f1f1; }
             QToolButton#panelItem { background:#292e36; color:#f1f1f1;
                 border:1px solid #3c424c; border-radius:0; padding:4px 10px; }
             QToolButton#panelItem:hover { background:#3b424d; }
@@ -387,7 +433,7 @@ class SecondaryTaskbar(QWidget):
 
         if windows:
             for window in windows:
-                self.buttons.addWidget(TaskButton(window, self.panel_height, self.task_button_width, self.show_task_labels, self.task_host))
+                self.buttons.addWidget(TaskButton(window, self.panel_height, self.task_button_width, self.show_task_labels, self.task_margin_x, self.task_margin_y, self.task_host))
         else:
             empty = QLabel("No open windows", self.task_host)
             empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
@@ -458,6 +504,18 @@ class SecondaryTaskbar(QWidget):
         show_labels.setChecked(self.show_task_labels)
         form.addRow("Task buttons", show_labels)
 
+        margin_x = QSpinBox(dialog)
+        margin_x.setRange(0, 24)
+        margin_x.setSuffix(" px")
+        margin_x.setValue(self.task_margin_x)
+        form.addRow("Button horizontal padding", margin_x)
+
+        margin_y = QSpinBox(dialog)
+        margin_y.setRange(0, 16)
+        margin_y.setSuffix(" px")
+        margin_y.setValue(self.task_margin_y)
+        form.addRow("Button vertical padding", margin_y)
+
         alignment = QComboBox(dialog)
         for value, label in (("left", "Left"), ("center", "Center"), ("right", "Right")):
             alignment.addItem(label, value)
@@ -478,6 +536,16 @@ class SecondaryTaskbar(QWidget):
         clock_font_size.setValue(self.clock_font_size)
         form.addRow("Clock font size", clock_font_size)
 
+        panel_color_value = {"value": self.panel_color}
+        panel_color_button = QPushButton(f"Choose… ({self.panel_color})", dialog)
+        def choose_panel_color():
+            color = QColorDialog.getColor(panel_color_value["value"], dialog, "Panel color")
+            if color.isValid():
+                panel_color_value["value"] = color.name()
+                panel_color_button.setText(f"Choose… ({color.name()})")
+        panel_color_button.clicked.connect(choose_panel_color)
+        form.addRow("Panel color", panel_color_button)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
         buttons.button(QDialogButtonBox.Ok).setText("Apply")
         buttons.accepted.connect(dialog.accept)
@@ -493,6 +561,9 @@ class SecondaryTaskbar(QWidget):
             self.panel_alignment = alignment.currentData()
             self.show_task_labels = show_labels.isChecked()
             self.task_button_width = button_width.value()
+            self.task_margin_x = margin_x.value()
+            self.task_margin_y = margin_y.value()
+            self.panel_color = panel_color_value["value"]
             self.clock_show_date = clock_date.isChecked()
             self.clock_show_seconds = clock_seconds.isChecked()
             self.clock_font_size = clock_font_size.value()
@@ -504,10 +575,17 @@ class SecondaryTaskbar(QWidget):
             self.settings.setValue("panel_alignment", self.panel_alignment)
             self.settings.setValue("show_task_labels", self.show_task_labels)
             self.settings.setValue("task_button_width", self.task_button_width)
+            self.settings.setValue("task_margin_x", self.task_margin_x)
+            self.settings.setValue("task_margin_y", self.task_margin_y)
+            self.settings.setValue("panel_color", self.panel_color)
             self.settings.setValue("clock_show_date", self.clock_show_date)
             self.settings.setValue("clock_show_seconds", self.clock_show_seconds)
             self.settings.setValue("clock_font_size", self.clock_font_size)
             self.clock.setFont(QFont("Segoe UI", self.clock_font_size))
+            self.setStyleSheet(self.styleSheet().replace(
+                "QWidget#NtBar { background:#202329; color:#f1f1f1; }",
+                f"QWidget#NtBar {{ background:{self.panel_color}; color:#f1f1f1; }}"
+            ))
             self.update_clock()
             self.setFixedHeight(self.panel_height)
             self.layout().setContentsMargins(0, 0, 0, 0)
