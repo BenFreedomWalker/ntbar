@@ -302,19 +302,19 @@ class SystemTrayWidget(QWidget):
             _shared_entries = {}
         self.entries = dict(_shared_entries)
         self.events = _shared_events
-        self.events.changed.connect(self.on_notification_changed)
-        self._connected = True
-        if _shared_users == 0:
-            _shared_provider.start()
-        _shared_users += 1
-        self.setToolTip(_shared_provider.error or "Windows notification area")
-
         self.row = QHBoxLayout(self)
         self.row.setContentsMargins(4, 0, 4, 0)
         self.row.setSpacing(max(0, int(config.get("spacing", 2))))
         self.row.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setFixedHeight(max(1, panel_height))
+
+        self.events.changed.connect(self.on_notification_changed)
+        self._connected = True
+        if _shared_users == 0:
+            _shared_provider.start()
+        _shared_users += 1
+        self.setToolTip(_shared_provider.error or "Windows notification area")
 
 
     def on_notification_changed(self, event, data):
