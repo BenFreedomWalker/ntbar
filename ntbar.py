@@ -4,40 +4,62 @@ import ctypes
 import json
 import os
 import subprocess
+import uuid
 import winreg
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QFont, QDesktopServices, QFontMetrics
-from PySide6.QtWidgets import QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu, QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog, QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QCheckBox, QListWidget, QPushButton, QVBoxLayout, QInputDialog, QColorDialog
-from PySide6.QtCore import QUrl, QSettings
-from win32_api import enumerate_windows, activate_or_minimize, close_window, monitor_list, register_appbar, remove_appbar, reposition_appbar, load_window_icon
+
+from PySide6.QtCore import Qt, QTimer, QSize, QUrl, QSettings
+from PySide6.QtGui import QFont, QDesktopServices, QFontMetrics, QIcon
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu,
+    QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog,
+    QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QCheckBox,
+    QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QInputDialog,
+    QColorDialog, QFileDialog, QLineEdit
+)
+
+from win32_api import (
+    enumerate_windows, activate_or_minimize, close_window, monitor_list,
+    register_appbar, remove_appbar, reposition_appbar, load_window_icon
+)
+
 
 if sys.platform != "win32":
     raise SystemExit("NtBar supports Windows 10 and 11.")
 
-class TaskButton(QToolButton):
-    BUTTON_WIDTH = 112
 
-    def __init__(self, window, panel_height=44, button_width=96, show_label=True, margin_x=9, margin_y=4, parent=None):
+class TaskButton(QToolButton):
+    def __init__(self, window, panel_height, config, parent=None):
         super().__init__(parent)
         self.hwnd = window.hwnd
-        self.show_label = show_label
+        self.show_label = bool(config.get("show_labels", True))
         self.original_title = window.title
-        self.margin_x = max(0, margin_x)
-        self.margin_y = max(0, margin_y)
+        self.margin_x = max(0, int(config.get("margin_x", 4)))
+        self.margin_y = max(0, int(config.get("margin_y", 2)))
         self.scroll_offset = 0
         self.marquee_timer = QTimer(self)
         self.marquee_timer.setInterval(180)
         self.marquee_timer.timeout.connect(self.advance_marquee)
-        self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon if show_label else Qt.ToolButtonIconOnly)
-        self.setText(window.title if show_label else "")
+        self.setToolButtonStyle(
+            Qt.ToolButtonTextBesideIcon if self.show_label else Qt.ToolButtonIconOnly
+        )
+        self.setText(window.title if self.show_label else "")
         self.setToolTip(window.title)
         icon = load_window_icon(window.hwnd)
         self.setIcon(icon or QApplication.style().standardIcon(QStyle.SP_ComputerIcon))
         button_height = max(1, panel_height)
-        icon_size = max(8, min(button_height - (2 * self.margin_y) - 2, button_height - (2 * self.margin_x) - 2) if not show_label else min(20, button_height - (2 * self.margin_y) - 2))
+        width = max(32, int(config.get("button_width", 96)))
+        if not self.show_label:
+            width = button_height
+        icon_size = max(
+            8,
+            min(
+                button_height - 2 * self.margin_y - 2,
+                button_height - 2 * self.margin_x - 2
+            ) if not self.show_label else min(20, button_height - 2 * self.margin_y - 2)
+        )
         self.setIconSize(QSize(icon_size, icon_size))
-        self.setFixedSize(max(32, button_width) if show_label else button_height, button_height)
+        self.setFixedSize(width, button_height)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setCursor(Qt.PointingHandCursor)
         self.setProperty("active", window.active)
@@ -54,7 +76,7 @@ class TaskButton(QToolButton):
     def marquee_text(self):
         if not self.show_label or not self.original_title:
             return
-        available = max(1, self.width() - self.iconSize().width() - (2 * self.margin_x) - 28)
+        available = max(1, self.width() - self.iconSize().width() - 2 * self.margin_x - 28)
         metrics = QFontMetrics(self.font())
         if metrics.horizontalAdvance(self.original_title) <= available:
             self.setText(self.original_title)
@@ -88,19 +110,18 @@ class TaskButton(QToolButton):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        action = menu.addAction("Close window")
-        action.triggered.connect(lambda: close_window(self.hwnd))
+        menu.addAction("Close window", lambda: close_window(self.hwnd))
         menu.exec(event.globalPos())
+
 
 class SecondaryTaskbar(QWidget):
     DEFAULT_HEIGHT = 44
-    DEFAULT_PANEL_ITEMS = ["start", "tasks", "separator", "clock"]
     ITEM_LABELS = {
-        "start": "Start menu (Open-Shell / Windows)",
+        "start": "Start menu",
         "tasks": "Tasklist",
         "clock": "Clock",
         "separator": "Separator",
-        "expand": "Expanded separator",
+        "launcher": "Launcher",
     }
 
     def __init__(self):
@@ -110,75 +131,97 @@ class SecondaryTaskbar(QWidget):
         self.panel_edge = self.settings.value("panel_edge", "bottom")
         self.panel_length = self.settings.value("panel_length", 100, type=int)
         self.panel_alignment = self.settings.value("panel_alignment", "center")
-        self.show_task_labels = self.settings.value("show_task_labels", True, type=bool)
-        self.task_button_width = self.settings.value("task_button_width", 96, type=int)
-        self.task_margin_x = self.settings.value("task_margin_x", 4, type=int)
-        self.task_margin_y = self.settings.value("task_margin_y", 2, type=int)
         self.panel_color = self.settings.value("panel_color", "#202329")
-        self.clock_show_date = self.settings.value("clock_show_date", True, type=bool)
-        self.clock_show_seconds = self.settings.value("clock_show_seconds", False, type=bool)
-        self.clock_font_size = self.settings.value("clock_font_size", 9, type=int)
-        try:
-            self.panel_items = json.loads(self.settings.value("panel_items", json.dumps(self.DEFAULT_PANEL_ITEMS)))
-            if not isinstance(self.panel_items, list) or not all(x in self.ITEM_LABELS for x in self.panel_items):
-                raise ValueError("Invalid panel item list")
-        except (TypeError, ValueError, json.JSONDecodeError):
-            self.panel_items = list(self.DEFAULT_PANEL_ITEMS)
+        self.items = self.load_items()
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setObjectName("NtBar")
         self.setFixedHeight(self.panel_height)
         self.apply_panel_style()
+
+        self.task_hosts = []
+        self.module_widgets = []
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-
-        self.task_scroll = QScrollArea(self)
-        self.task_scroll.setWidgetResizable(False)
-        self.task_scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.task_scroll.setFrameShape(QFrame.NoFrame)
-        self.task_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.task_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.task_scroll.setMinimumWidth(0)
-        self.task_host = QWidget()
-        self.task_host.setAttribute(Qt.WA_StyledBackground, True)
-        self.task_host.setStyleSheet("background:transparent;")
-        self.buttons = QHBoxLayout(self.task_host)
-        self.buttons.setContentsMargins(0, 0, 0, 0)
-        self.buttons.setSpacing(2)
-        self.buttons.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.task_scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.task_scroll.setWidget(self.task_host)
-
-        self.clock = QLabel(self)
-        self.clock.setObjectName("clock")
-        self.clock.setFont(QFont("Segoe UI", self.clock_font_size))
-        self.clock.setAlignment(Qt.AlignCenter)
-        # Only an explicit "Expanded separator" may consume free panel space.
-        self.clock.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.rebuild_modules()
 
         self.target = None
         self.signature = None
         self.registered = False
-
         self.show()
         self.target = self.default_monitor()
         self.registered = register_appbar(int(self.winId()))
         self.place_bar()
         self.refresh_windows()
-        self.update_clock()
+        self.update_clocks()
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.refresh_windows)
         self.refresh_timer.start(900)
         self.clock_timer = QTimer(self)
-        self.clock_timer.timeout.connect(self.update_clock)
+        self.clock_timer.timeout.connect(self.update_clocks)
         self.clock_timer.start(1000)
         self.monitor_timer = QTimer(self)
         self.monitor_timer.timeout.connect(self.check_monitors)
         self.monitor_timer.start(2500)
+
+    def default_config(self, kind):
+        if kind == "clock":
+            return {"show_date": True, "show_seconds": False, "font_size": 9}
+        if kind == "tasks":
+            return {"show_labels": True, "button_width": 96, "margin_x": 4, "margin_y": 2}
+        if kind == "separator":
+            return {"visible": True, "expand": False, "width": 8}
+        if kind == "start":
+            return {"label": "Start"}
+        if kind == "launcher":
+            return {"name": "Launcher", "icon": "", "command": ""}
+        return {}
+
+    def load_items(self):
+        raw = self.settings.value("panel_items", "")
+        try:
+            parsed = json.loads(raw) if raw else None
+        except (TypeError, ValueError):
+            parsed = None
+        if not isinstance(parsed, list) or not parsed:
+            parsed = [
+                {"id": uuid.uuid4().hex, "type": "start", "config": self.default_config("start")},
+                {"id": uuid.uuid4().hex, "type": "tasks", "config": self.default_config("tasks")},
+                {"id": uuid.uuid4().hex, "type": "separator", "config": self.default_config("separator")},
+                {"id": uuid.uuid4().hex, "type": "clock", "config": self.default_config("clock")},
+            ]
+        normalized = []
+        for entry in parsed:
+            if isinstance(entry, str):
+                kind = "separator" if entry == "expand" else entry
+                config = self.default_config(kind)
+                if entry == "expand":
+                    config["expand"] = True
+            elif isinstance(entry, dict):
+                kind = entry.get("type")
+                config = self.default_config(kind) if kind in self.ITEM_LABELS else {}
+                config.update(entry.get("config", {}) if isinstance(entry.get("config"), dict) else {})
+            else:
+                continue
+            if kind not in self.ITEM_LABELS:
+                continue
+            normalized.append({
+                "id": str(entry.get("id") if isinstance(entry, dict) else uuid.uuid4().hex),
+                "type": kind,
+                "config": config,
+            })
+        return normalized or [
+            {"id": uuid.uuid4().hex, "type": "start", "config": self.default_config("start")},
+            {"id": uuid.uuid4().hex, "type": "tasks", "config": self.default_config("tasks")},
+            {"id": uuid.uuid4().hex, "type": "separator", "config": self.default_config("separator")},
+            {"id": uuid.uuid4().hex, "type": "clock", "config": self.default_config("clock")},
+        ]
+
+    def save_items(self):
+        self.settings.setValue("panel_items", json.dumps(self.items))
 
     def apply_panel_style(self):
         self.setStyleSheet(f"""
@@ -186,9 +229,19 @@ class SecondaryTaskbar(QWidget):
             QToolButton#panelItem {{ background:#292e36; color:#f1f1f1;
                 border:1px solid #3c424c; border-radius:0; padding:4px 10px; }}
             QToolButton#panelItem:hover {{ background:#3b424d; }}
-            QLabel#clock {{ color:#e2e5e9; padding:0; }}
+            QLabel#clockItem {{ color:#e2e5e9; padding:0 6px; }}
             QScrollArea {{ border:0; background:transparent; }}
         """)
+
+    def persist_panel_settings(self):
+        for key, value in (
+            ("panel_edge", self.panel_edge),
+            ("panel_height", self.panel_height),
+            ("panel_length", self.panel_length),
+            ("panel_alignment", self.panel_alignment),
+            ("panel_color", self.panel_color),
+        ):
+            self.settings.setValue(key, value)
 
     def default_monitor(self):
         monitors = monitor_list()
@@ -221,121 +274,139 @@ class SecondaryTaskbar(QWidget):
             action.triggered.connect(lambda checked=False, m=monitor: self.select_monitor(m))
         menu.addSeparator()
         menu.addAction("Panel Items…", self.show_panel_items)
-        menu.addAction("Settings…", self.show_settings)
+        menu.addAction("Panel Settings…", self.show_settings)
         menu.addAction("Refresh windows", self.refresh_windows)
         menu.addAction("About NtBar", self.show_about)
         menu.addSeparator()
         menu.addAction("Exit NtBar", self.close)
         menu.exec(event.globalPos())
 
-    def make_panel_item(self, item):
-        if item == "tasks":
-            return self.task_scroll
-        if item == "clock":
-            return self.clock
-        if item == "separator":
-            line = QFrame(self)
-            line.setFrameShape(QFrame.VLine)
-            line.setFrameShadow(QFrame.Plain)
-            line.setStyleSheet("color:#555b65;")
-            line.setFixedWidth(7)
-            return line
-        if item == "expand":
-            spacer = QWidget(self)
-            spacer.setMinimumWidth(0)
-            spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            return spacer
-        if item == "start":
+    def make_tasklist(self, config):
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(False)
+        scroll.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(0)
+        host = QWidget()
+        host.setAttribute(Qt.WA_StyledBackground, True)
+        host.setStyleSheet("background:transparent;")
+        buttons = QHBoxLayout(host)
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(2)
+        buttons.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        scroll.setWidget(host)
+        self.task_hosts.append({"scroll": scroll, "host": host, "layout": buttons, "config": config})
+        return scroll
+
+    def make_panel_item(self, entry):
+        kind = entry["type"]
+        config = entry["config"]
+        if kind == "tasks":
+            return self.make_tasklist(config)
+        if kind == "clock":
+            label = QLabel(self)
+            label.setObjectName("clockItem")
+            label.setAlignment(Qt.AlignCenter)
+            label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            label.setFont(QFont("Segoe UI", max(6, int(config.get("font_size", 9)))))
+            label.setProperty("item_id", entry["id"])
+            return label
+        if kind == "separator":
+            if config.get("expand", False):
+                spacer = QWidget(self)
+                spacer.setMinimumWidth(0)
+                spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                return spacer
+            separator = QFrame(self)
+            if config.get("visible", True):
+                separator.setFrameShape(QFrame.VLine)
+                separator.setFrameShadow(QFrame.Plain)
+                separator.setStyleSheet("color:#555b65;")
+            else:
+                separator.setFrameShape(QFrame.NoFrame)
+                separator.setStyleSheet("background:transparent;")
+            separator.setFixedWidth(max(0, int(config.get("width", 8))))
+            return separator
+        if kind == "start":
             button = QToolButton(self)
             button.setObjectName("panelItem")
-            button.setText("Start")
+            button.setText(str(config.get("label", "Start")))
             button.setFixedHeight(max(1, self.panel_height))
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             button.clicked.connect(self.open_start_menu)
+            return button
+        if kind == "launcher":
+            button = QToolButton(self)
+            button.setObjectName("panelItem")
+            button.setText(str(config.get("name", "Launcher")))
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            icon_path = str(config.get("icon", ""))
+            if icon_path and os.path.isfile(icon_path):
+                button.setIcon(QIcon(icon_path))
+                button.setIconSize(QSize(max(16, self.panel_height - 12), max(16, self.panel_height - 12)))
+            button.setFixedHeight(max(1, self.panel_height))
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            command = str(config.get("command", "")).strip()
+            button.setEnabled(bool(command))
+            button.setToolTip(command or "Set a launch command in item settings")
+            button.clicked.connect(lambda checked=False, cmd=command: self.launch_command(cmd))
             return button
         return QWidget(self)
 
     def rebuild_modules(self):
         layout = self.layout()
         while layout.count():
-            entry = layout.takeAt(0)
-            widget = entry.widget()
-            if widget is not None and widget not in (self.task_scroll, self.clock):
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
                 widget.deleteLater()
+        self.task_hosts = []
         self.module_widgets = []
-        for item in self.panel_items:
-            widget = self.make_panel_item(item)
+        for entry in self.items:
+            widget = self.make_panel_item(entry)
             self.module_widgets.append(widget)
-            layout.addWidget(widget, 1 if item == "expand" else 0)
-        self.update_clock()
+            layout.addWidget(widget, 1 if entry["type"] == "separator" and entry["config"].get("expand", False) else 0)
+        self.update_clocks()
+        self.refresh_windows()
 
     def find_open_shell(self):
         candidates = []
         for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):
             if base:
                 candidates.append(os.path.join(base, "Open-Shell", "StartMenu.exe"))
-
         uninstall_roots = (
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
-            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
         )
         for hive, root in uninstall_roots:
             try:
                 with winreg.OpenKey(hive, root) as key:
-                    count = winreg.QueryInfoKey(key)[0]
-                    for index in range(count):
+                    for index in range(winreg.QueryInfoKey(key)[0]):
                         try:
-                            subkey_name = winreg.EnumKey(key, index)
-                            with winreg.OpenKey(key, subkey_name) as subkey:
-                                display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
-                                if "open-shell" not in display_name.lower():
-                                    continue
-                                install_dir = winreg.QueryValueEx(subkey, "InstallLocation")[0]
-                                if install_dir:
-                                    candidates.append(os.path.join(install_dir, "StartMenu.exe"))
+                            with winreg.OpenKey(key, winreg.EnumKey(key, index)) as subkey:
+                                name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                                if "open-shell" in name.lower():
+                                    location = winreg.QueryValueEx(subkey, "InstallLocation")[0]
+                                    if location:
+                                        candidates.append(os.path.join(location, "StartMenu.exe"))
                         except OSError:
                             continue
             except OSError:
                 continue
-
-        seen = set()
         for path in candidates:
-            if not path:
-                continue
-            path = os.path.abspath(os.path.expandvars(path))
-            normalized = os.path.normcase(path)
-            if normalized in seen:
-                continue
-            seen.add(normalized)
-            if not os.path.isfile(path):
-                continue
-            # Avoid unrelated StartMenu.exe files: accept only the known
-            # Open-Shell install directory or a registered Open-Shell location.
-            if os.path.basename(os.path.dirname(path)).lower() == "open-shell":
-                return path
-            for hive, root in uninstall_roots:
-                try:
-                    with winreg.OpenKey(hive, root) as key:
-                        for index in range(winreg.QueryInfoKey(key)[0]):
-                            try:
-                                with winreg.OpenKey(key, winreg.EnumKey(key, index)) as subkey:
-                                    name = winreg.QueryValueEx(subkey, "DisplayName")[0]
-                                    location = winreg.QueryValueEx(subkey, "InstallLocation")[0]
-                                    if "open-shell" in name.lower() and location and os.path.normcase(os.path.abspath(location)) == os.path.normcase(os.path.dirname(path)):
-                                        return path
-                            except OSError:
-                                continue
-                except OSError:
-                    continue
+            if path and os.path.isfile(path):
+                if os.path.basename(os.path.dirname(path)).lower() == "open-shell":
+                    return path
         return None
 
     def open_windows_start_menu(self):
         user32 = ctypes.windll.user32
-        vk_lwin = 0x5B
-        keyeventf_keyup = 0x0002
-        user32.keybd_event(vk_lwin, 0, 0, 0)
-        user32.keybd_event(vk_lwin, 0, keyeventf_keyup, 0)
+        user32.keybd_event(0x5B, 0, 0, 0)
+        user32.keybd_event(0x5B, 0, 0x0002, 0)
 
     def open_start_menu(self):
         executable = self.find_open_shell()
@@ -345,125 +416,226 @@ class SecondaryTaskbar(QWidget):
                 return
             except OSError:
                 pass
-
-        # Open-Shell is unavailable or could not be started: use Windows' own menu.
         self.open_windows_start_menu()
+
+    def launch_command(self, command):
+        if not command:
+            return
+        try:
+            subprocess.Popen(command, shell=True, cwd=os.path.expanduser("~"))
+        except OSError as error:
+            QMessageBox.warning(self, "Launcher", f"Could not start the command:\n{error}")
+
+    def item_title(self, entry):
+        kind = entry["type"]
+        config = entry["config"]
+        title = self.ITEM_LABELS[kind]
+        if kind == "launcher":
+            title += f' — {config.get("name", "Launcher")}'
+        elif kind == "start":
+            title += f' — {config.get("label", "Start")}'
+        return title
 
     def show_panel_items(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Panel Items")
-        dialog.setMinimumSize(360, 330)
+        dialog.setMinimumSize(440, 390)
         outer = QVBoxLayout(dialog)
         listing = QListWidget(dialog)
-        for item in self.panel_items:
-            listing.addItem(self.ITEM_LABELS[item])
+        listing.setSelectionMode(QListWidget.SingleSelection)
+        for entry in self.items:
+            row = QListWidgetItem(self.item_title(entry))
+            row.setData(Qt.UserRole, entry["id"])
+            listing.addItem(row)
         outer.addWidget(listing)
 
         controls = QHBoxLayout()
         add_button = QPushButton("Add item…", dialog)
+        settings_button = QPushButton("Settings…", dialog)
         remove_button = QPushButton("Remove", dialog)
         up_button = QPushButton("Move up", dialog)
         down_button = QPushButton("Move down", dialog)
-        for button in (add_button, remove_button, up_button, down_button):
+        for button in (add_button, settings_button, remove_button, up_button, down_button):
             controls.addWidget(button)
         outer.addLayout(controls)
 
+        def selected_index():
+            row = listing.currentRow()
+            return row if 0 <= row < len(self.items) else -1
+
+        def refresh_list(select_row=-1):
+            listing.clear()
+            for entry in self.items:
+                row = QListWidgetItem(self.item_title(entry))
+                row.setData(Qt.UserRole, entry["id"])
+                listing.addItem(row)
+            if listing.count():
+                listing.setCurrentRow(max(0, min(select_row, listing.count() - 1)))
+
         def add_item():
-            unique_items = {"start", "tasks", "clock"}
-            label_keys = {value: key for key, value in self.ITEM_LABELS.items()}
-            present = {
-                label_keys[listing.item(i).text()]
-                for i in range(listing.count())
-                if label_keys[listing.item(i).text()] in unique_items
-            }
-            choices = [value for key, value in self.ITEM_LABELS.items() if key not in present]
-            if not choices:
+            choices = list(self.ITEM_LABELS.values())
+            selected, accepted = QInputDialog.getItem(dialog, "Add panel item", "Item type:", choices, 0, False)
+            if not accepted:
                 return
-            selected, accepted = QInputDialog.getItem(dialog, "Add panel item", "Item:", choices, 0, False)
-            if accepted:
-                key = next(k for k, value in self.ITEM_LABELS.items() if value == selected)
-                listing.addItem(self.ITEM_LABELS[key])
+            kind = next(key for key, value in self.ITEM_LABELS.items() if value == selected)
+            entry = {"id": uuid.uuid4().hex, "type": kind, "config": self.default_config(kind)}
+            self.items.append(entry)
+            refresh_list(len(self.items) - 1)
+            self.save_items()
+            self.rebuild_modules()
 
         def move_item(delta):
-            row = listing.currentRow()
-            target = row + delta
-            if row < 0 or not 0 <= target < listing.count():
+            index = selected_index()
+            target = index + delta
+            if index < 0 or not 0 <= target < len(self.items):
                 return
-            item = listing.takeItem(row)
-            listing.insertItem(target, item)
-            listing.setCurrentRow(target)
+            entry = self.items.pop(index)
+            self.items.insert(target, entry)
+            refresh_list(target)
+            self.save_items()
+            self.rebuild_modules()
+
+        def remove_item():
+            index = selected_index()
+            if index < 0:
+                return
+            self.items.pop(index)
+            refresh_list(min(index, len(self.items) - 1))
+            self.save_items()
+            self.rebuild_modules()
+
+        def edit_selected():
+            index = selected_index()
+            if index < 0:
+                return
+            if self.edit_item_settings(self.items[index]):
+                refresh_list(index)
+                self.save_items()
+                self.rebuild_modules()
 
         add_button.clicked.connect(add_item)
-        remove_button.clicked.connect(lambda: listing.takeItem(listing.currentRow()) if listing.currentRow() >= 0 else None)
+        settings_button.clicked.connect(edit_selected)
+        listing.itemDoubleClicked.connect(lambda _item: edit_selected())
+        remove_button.clicked.connect(remove_item)
         up_button.clicked.connect(lambda: move_item(-1))
         down_button.clicked.connect(lambda: move_item(1))
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+        outer.addWidget(buttons)
+        dialog.exec()
+
+    def edit_item_settings(self, entry):
+        kind = entry["type"]
+        config = dict(entry["config"])
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"{self.ITEM_LABELS[kind]} Settings")
+        form = QFormLayout(dialog)
+
+        if kind == "clock":
+            show_date = QCheckBox("Show date", dialog)
+            show_date.setChecked(bool(config.get("show_date", True)))
+            form.addRow("Date", show_date)
+            show_seconds = QCheckBox("Show seconds", dialog)
+            show_seconds.setChecked(bool(config.get("show_seconds", False)))
+            form.addRow("Time", show_seconds)
+            font_size = QSpinBox(dialog)
+            font_size.setRange(6, 32)
+            font_size.setSuffix(" pt")
+            font_size.setValue(int(config.get("font_size", 9)))
+            form.addRow("Font size", font_size)
+        elif kind == "tasks":
+            show_labels = QCheckBox("Show window titles", dialog)
+            show_labels.setChecked(bool(config.get("show_labels", True)))
+            form.addRow("Labels", show_labels)
+            width = QSpinBox(dialog)
+            width.setRange(48, 320)
+            width.setSingleStep(8)
+            width.setSuffix(" px")
+            width.setValue(int(config.get("button_width", 96)))
+            form.addRow("Button width", width)
+            margin_x = QSpinBox(dialog)
+            margin_x.setRange(0, 24)
+            margin_x.setSuffix(" px")
+            margin_x.setValue(int(config.get("margin_x", 4)))
+            form.addRow("Horizontal padding", margin_x)
+            margin_y = QSpinBox(dialog)
+            margin_y.setRange(0, 16)
+            margin_y.setSuffix(" px")
+            margin_y.setValue(int(config.get("margin_y", 2)))
+            form.addRow("Vertical padding", margin_y)
+        elif kind == "separator":
+            visible = QComboBox(dialog)
+            visible.addItem("Visible line", True)
+            visible.addItem("Transparent", False)
+            visible.setCurrentIndex(0 if config.get("visible", True) else 1)
+            form.addRow("Appearance", visible)
+            expand = QCheckBox("Expand to fill available space", dialog)
+            expand.setChecked(bool(config.get("expand", False)))
+            form.addRow("Size", expand)
+            width = QSpinBox(dialog)
+            width.setRange(0, 64)
+            width.setSuffix(" px")
+            width.setValue(int(config.get("width", 8)))
+            form.addRow("Width", width)
+        elif kind == "start":
+            label = QLineEdit(str(config.get("label", "Start")), dialog)
+            form.addRow("Button text", label)
+        elif kind == "launcher":
+            name = QLineEdit(str(config.get("name", "Launcher")), dialog)
+            form.addRow("Name", name)
+            icon_path = {"value": str(config.get("icon", ""))}
+            icon_row = QHBoxLayout()
+            icon_edit = QLineEdit(icon_path["value"], dialog)
+            browse = QPushButton("Browse…", dialog)
+            def choose_icon():
+                path, _ = QFileDialog.getOpenFileName(
+                    dialog, "Choose launcher icon", "",
+                    "Icons and images (*.ico *.png *.bmp *.jpg *.jpeg);;All files (*)"
+                )
+                if path:
+                    icon_path["value"] = path
+                    icon_edit.setText(path)
+            browse.clicked.connect(choose_icon)
+            icon_edit.textChanged.connect(lambda value: icon_path.update(value=value))
+            icon_row.addWidget(icon_edit)
+            icon_row.addWidget(browse)
+            form.addRow("Icon", icon_row)
+            command = QLineEdit(str(config.get("command", "")), dialog)
+            command.setPlaceholderText(r'C:\Program Files\App\app.exe or a command')
+            form.addRow("Launch command", command)
+            note = QLabel("The command is started as entered. Arguments and quoted paths are supported.", dialog)
+            note.setWordWrap(True)
+            form.addRow("", note)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
-        outer.addWidget(buttons)
-        if dialog.exec() == QDialog.Accepted:
-            reverse = {value: key for key, value in self.ITEM_LABELS.items()}
-            self.panel_items = [reverse[listing.item(i).text()] for i in range(listing.count())]
-            self.settings.setValue("panel_items", json.dumps(self.panel_items))
-            self.rebuild_modules()
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return False
 
-    def show_about(self):
-        QMessageBox.about(
-            self, "About NtBar",
-            "<b>NtBar</b><br>Secondary taskbar for Windows<br><br>"
-            "Built with Python, PySide6 and native Windows APIs.<br>"
-            "Project: github.com/BenFreedomWalker/ntbar"
-        )
+        if kind == "clock":
+            config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(), font_size=font_size.value())
+        elif kind == "tasks":
+            config.update(show_labels=show_labels.isChecked(), button_width=width.value(), margin_x=margin_x.value(), margin_y=margin_y.value())
+        elif kind == "separator":
+            config.update(visible=visible.currentData(), expand=expand.isChecked(), width=width.value())
+        elif kind == "start":
+            config["label"] = label.text().strip() or "Start"
+        elif kind == "launcher":
+            if not command.text().strip():
+                QMessageBox.warning(dialog, "Launcher", "Enter a launch command before saving.")
+                return False
+            config.update(name=name.text().strip() or "Launcher", icon=icon_path["value"], command=command.text().strip())
 
-    def select_monitor(self, monitor):
-        self.target = monitor
-        self.settings.setValue("monitor_device", monitor["device"])
-        self.place_bar()
-
-    def refresh_windows(self):
-        windows = enumerate_windows(int(self.winId()))
-        signature = tuple((w.hwnd, w.title, w.minimized, w.active) for w in windows)
-        if signature == self.signature:
-            return
-        self.signature = signature
-
-        while self.buttons.count():
-            item = self.buttons.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-        if windows:
-            for window in windows:
-                self.buttons.addWidget(TaskButton(window, self.panel_height, self.task_button_width, self.show_task_labels, self.task_margin_x, self.task_margin_y, self.task_host))
-        else:
-            empty = QLabel("No open windows", self.task_host)
-            empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-            empty.setStyleSheet("color:#858d98; padding:0 10px;")
-            empty.setFixedHeight(max(1, self.panel_height))
-            self.buttons.addWidget(empty)
-
-        self.buttons.activate()
-        content_width = sum(
-            self.buttons.itemAt(i).widget().width()
-            for i in range(self.buttons.count())
-            if self.buttons.itemAt(i).widget() is not None
-        )
-        if len(windows) > 1:
-            content_width += self.buttons.spacing() * (len(windows) - 1)
-
-        content_width = max(content_width, 1)
-        inner_height = max(1, self.panel_height)
-        self.task_host.setFixedSize(content_width, inner_height)
-
-        self.task_scroll.setMinimumWidth(0)
-        available_width = max(1, self.width())
-        self.task_scroll.setFixedSize(min(content_width, available_width), inner_height)
+        entry["config"] = config
+        return True
 
     def show_settings(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("NtBar Settings")
+        dialog.setWindowTitle("Panel Settings")
         dialog.setMinimumWidth(320)
         form = QFormLayout(dialog)
 
@@ -496,58 +668,21 @@ class SecondaryTaskbar(QWidget):
         length.setValue(self.panel_length)
         form.addRow("Panel length", length)
 
-        button_width = QSpinBox(dialog)
-        button_width.setRange(48, 240)
-        button_width.setSingleStep(8)
-        button_width.setSuffix(" px")
-        button_width.setValue(self.task_button_width)
-        form.addRow("Task button width", button_width)
-
-        show_labels = QCheckBox("Show window titles on task buttons", dialog)
-        show_labels.setChecked(self.show_task_labels)
-        form.addRow("Task buttons", show_labels)
-
-        margin_x = QSpinBox(dialog)
-        margin_x.setRange(0, 24)
-        margin_x.setSuffix(" px")
-        margin_x.setValue(self.task_margin_x)
-        form.addRow("Button horizontal padding", margin_x)
-
-        margin_y = QSpinBox(dialog)
-        margin_y.setRange(0, 16)
-        margin_y.setSuffix(" px")
-        margin_y.setValue(self.task_margin_y)
-        form.addRow("Button vertical padding", margin_y)
-
         alignment = QComboBox(dialog)
         for value, label in (("left", "Left"), ("center", "Center"), ("right", "Right")):
             alignment.addItem(label, value)
         alignment.setCurrentIndex({"left": 0, "center": 1, "right": 2}.get(self.panel_alignment, 1))
         form.addRow("Alignment", alignment)
 
-        clock_date = QCheckBox("Show date", dialog)
-        clock_date.setChecked(self.clock_show_date)
-        form.addRow("Clock", clock_date)
-
-        clock_seconds = QCheckBox("Show seconds", dialog)
-        clock_seconds.setChecked(self.clock_show_seconds)
-        form.addRow("", clock_seconds)
-
-        clock_font_size = QSpinBox(dialog)
-        clock_font_size.setRange(6, 32)
-        clock_font_size.setSuffix(" pt")
-        clock_font_size.setValue(self.clock_font_size)
-        form.addRow("Clock font size", clock_font_size)
-
-        panel_color_value = {"value": self.panel_color}
-        panel_color_button = QPushButton(f"Choose… ({self.panel_color})", dialog)
-        def choose_panel_color():
-            color = QColorDialog.getColor(panel_color_value["value"], dialog, "Panel color")
+        color_value = {"value": self.panel_color}
+        color_button = QPushButton(f"Choose… ({self.panel_color})", dialog)
+        def choose_color():
+            color = QColorDialog.getColor(color_value["value"], dialog, "Panel color")
             if color.isValid():
-                panel_color_value["value"] = color.name()
-                panel_color_button.setText(f"Choose… ({color.name()})")
-        panel_color_button.clicked.connect(choose_panel_color)
-        form.addRow("Panel color", panel_color_button)
+                color_value["value"] = color.name()
+                color_button.setText(f"Choose… ({color.name()})")
+        color_button.clicked.connect(choose_color)
+        form.addRow("Panel color", color_button)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
         buttons.button(QDialogButtonBox.Ok).setText("Apply")
@@ -558,52 +693,72 @@ class SecondaryTaskbar(QWidget):
         if dialog.exec() == QDialog.Accepted:
             if monitor.currentData() is not None:
                 self.target = monitor.currentData()
+                self.settings.setValue("monitor_device", self.target["device"])
             self.panel_edge = edge.currentData()
             self.panel_height = height.value()
             self.panel_length = length.value()
             self.panel_alignment = alignment.currentData()
-            self.show_task_labels = show_labels.isChecked()
-            self.task_button_width = button_width.value()
-            self.task_margin_x = margin_x.value()
-            self.task_margin_y = margin_y.value()
-            self.panel_color = panel_color_value["value"]
-            self.clock_show_date = clock_date.isChecked()
-            self.clock_show_seconds = clock_seconds.isChecked()
-            self.clock_font_size = clock_font_size.value()
-            if self.target:
-                self.settings.setValue("monitor_device", self.target["device"])
-            self.settings.setValue("panel_edge", self.panel_edge)
-            self.settings.setValue("panel_height", self.panel_height)
-            self.settings.setValue("panel_length", self.panel_length)
-            self.settings.setValue("panel_alignment", self.panel_alignment)
-            self.settings.setValue("show_task_labels", self.show_task_labels)
-            self.settings.setValue("task_button_width", self.task_button_width)
-            self.settings.setValue("task_margin_x", self.task_margin_x)
-            self.settings.setValue("task_margin_y", self.task_margin_y)
-            self.settings.setValue("panel_color", self.panel_color)
-            self.settings.setValue("clock_show_date", self.clock_show_date)
-            self.settings.setValue("clock_show_seconds", self.clock_show_seconds)
-            self.settings.setValue("clock_font_size", self.clock_font_size)
-            self.clock.setFont(QFont("Segoe UI", self.clock_font_size))
-            self.apply_panel_style()
-            self.update_clock()
+            self.panel_color = color_value["value"]
+            self.persist_panel_settings()
             self.setFixedHeight(self.panel_height)
-            self.layout().setContentsMargins(0, 0, 0, 0)
+            self.apply_panel_style()
             self.rebuild_modules()
             self.place_bar()
-            self.signature = None
-            self.refresh_windows()
 
-    def update_clock(self):
+    def refresh_windows(self):
+        windows = enumerate_windows(int(self.winId()))
+        signature = tuple((w.hwnd, w.title, w.minimized, w.active) for w in windows)
+        if signature == self.signature:
+            return
+        self.signature = signature
+
+        for host_info in self.task_hosts:
+            buttons = host_info["layout"]
+            while buttons.count():
+                item = buttons.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+
+            config = host_info["config"]
+            if windows:
+                for window in windows:
+                    buttons.addWidget(TaskButton(window, self.panel_height, config, host_info["host"]))
+            else:
+                empty = QLabel("No open windows", host_info["host"])
+                empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                empty.setStyleSheet("color:#858d98; padding:0 10px;")
+                empty.setFixedHeight(max(1, self.panel_height))
+                buttons.addWidget(empty)
+
+            buttons.activate()
+            content_width = sum(
+                buttons.itemAt(i).widget().width()
+                for i in range(buttons.count())
+                if buttons.itemAt(i).widget() is not None
+            )
+            if len(windows) > 1:
+                content_width += buttons.spacing() * (len(windows) - 1)
+            content_width = max(content_width, 1)
+            host_info["host"].setFixedSize(content_width, max(1, self.panel_height))
+            host_info["scroll"].setFixedSize(min(content_width, max(1, self.width())), max(1, self.panel_height))
+
+    def update_clocks(self):
         now = datetime.now()
-        parts = []
-        if self.clock_show_date:
-            parts.append(now.strftime("%a %d %b"))
-        time_format = "%H:%M:%S" if self.clock_show_seconds else "%H:%M"
-        parts.append(now.strftime(time_format))
-        self.clock.setText("   ".join(parts))
-        self.clock.adjustSize()
-        self.clock.updateGeometry()
+        for index, entry in enumerate(self.items):
+            if entry["type"] != "clock":
+                continue
+            if index >= len(self.module_widgets):
+                continue
+            label = self.module_widgets[index]
+            config = entry["config"]
+            parts = []
+            if config.get("show_date", True):
+                parts.append(now.strftime("%a %d %b"))
+            parts.append(now.strftime("%H:%M:%S" if config.get("show_seconds", False) else "%H:%M"))
+            label.setText("   ".join(parts))
+            label.adjustSize()
+            label.updateGeometry()
 
     def check_monitors(self):
         monitors = monitor_list()
@@ -612,6 +767,19 @@ class SecondaryTaskbar(QWidget):
         if not any(m["device"] == (self.target or {}).get("device") for m in monitors):
             self.target = self.default_monitor()
             self.place_bar()
+
+    def show_about(self):
+        QMessageBox.about(
+            self, "About NtBar",
+            "<b>NtBar</b><br>Secondary taskbar for Windows<br><br>"
+            "Built with Python, PySide6 and native Windows APIs.<br>"
+            "Project: github.com/BenFreedomWalker/ntbar"
+        )
+
+    def select_monitor(self, monitor):
+        self.target = monitor
+        self.settings.setValue("monitor_device", monitor["device"])
+        self.place_bar()
 
     def closeEvent(self, event):
         for timer in (self.refresh_timer, self.clock_timer, self.monitor_timer):
@@ -623,6 +791,7 @@ class SecondaryTaskbar(QWidget):
         app = QApplication.instance()
         if app is not None:
             app.quit()
+
 
 def main():
     app = QApplication(sys.argv)
@@ -640,6 +809,7 @@ def main():
         remove_appbar(int(bar.winId()))
         bar.registered = False
     sys.exit(return_code)
+
 
 if __name__ == "__main__":
     main()
