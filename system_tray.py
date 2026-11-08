@@ -204,13 +204,38 @@ class WindowsNotificationArea:
                 self.service.RegisterCallback(self.callback)
 
             # ExplorerTrayService seeds icons that were registered before NtBar.
-            self._enumerate_explorer_icons()
+            # When Windows auto-hides inactive icons, temporarily disable that
+            # filtering while reading Explorer's toolbar, then restore it.
+            auto_tray = self._auto_tray_enabled()
+            if auto_tray:
+                try:
+                    self.service.EnableAutoTray(False)
+                except Exception:
+                    pass
+            try:
+                self._enumerate_explorer_icons()
+            finally:
+                if auto_tray:
+                    try:
+                        self.service.EnableAutoTray(True)
+                    except Exception:
+                        pass
             self._started = True
             return True
         except Exception as exc:
             self.error = str(exc)
             self.stop()
             return False
+
+    def _auto_tray_enabled(self):
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer") as key:
+                value, _ = winreg.QueryValueEx(key, "EnableAutoTray")
+                return int(value) == 1
+        except OSError:
+            return True
 
     def _enumerate_explorer_icons(self):
         hwnd = user32.FindWindowW("Shell_TrayWnd", None)
@@ -292,7 +317,7 @@ class WindowsNotificationArea:
         if self.service is not None:
             try:
                 if not self.legacy and self.cookie is not None:
-                    self.service.UnregisterCallback(self.cookie)
+                    self.service.UnregisterCallback(int(self.cookie.value))
                 elif self.legacy:
                     self.service.RegisterCallback(None)
             except Exception:
@@ -364,7 +389,7 @@ class NotificationIconButton(QToolButton):
         if msg:
             forward_icon_event(self.entry, msg, self._cursor_param())
             if self.entry.version >= 3:
-                select_msg = {Qt.LeftButton: 0x0400 + 3, Qt.RightButton: 0x007B}.get(event.button())
+                select_msg = {Qt.LeftButton: 0x0400, Qt.RightButton: 0x007B}.get(event.button())
                 if select_msg:
                     forward_icon_event(self.entry, select_msg, self._cursor_param())
         event.accept()
