@@ -245,6 +245,13 @@ class SecondaryTaskbar(QWidget):
 
     def apply_panel_style(self):
         background = self.item_background({"background_mode": self.panel_background_mode, "background_opacity": self.panel_opacity}, self.panel_color)
+        if self.panel_background_mode == "transparent":
+            # A zero-alpha pixel on a WS_EX_LAYERED window is click-through in
+            # Windows. Alpha=1 is visually imperceptible but remains hittable.
+            from PySide6.QtGui import QColor
+            hit_test_background = QColor(self.panel_color)
+            hit_test_background.setAlpha(1)
+            background = hit_test_background.name(QColor.HexArgb)
         self.setStyleSheet(f"""
             QWidget#NtBar {{ background:{background}; color:{self.text_color}; }}
             QToolButton#panelItem {{ color:{self.text_color}; border:0; }}
@@ -288,17 +295,15 @@ class SecondaryTaskbar(QWidget):
             self.raise_()
 
     def nativeEvent(self, event_type, message):
-        # A translucent Qt top-level window can otherwise let clicks on fully
-        # transparent pixels pass through to the desktop. Keep the whole panel
-        # hit-testable so its context menu also works in transparent/glass mode.
+        # PySide passes a pointer to the native MSG structure. The message ID
+        # follows the HWND field; reading the first DWORD reads part of HWND.
         try:
-            message_id = ctypes.cast(
-                ctypes.c_void_p(int(message)),
-                ctypes.POINTER(ctypes.c_uint)
-            ).contents.value
+            msg_ptr = int(message)
+            message_offset = ctypes.sizeof(ctypes.c_void_p)
+            message_id = ctypes.c_uint.from_address(msg_ptr + message_offset).value
             if message_id == 0x0084:  # WM_NCHITTEST
                 return True, 1  # HTCLIENT
-        except (TypeError, ValueError, OverflowError):
+        except (TypeError, ValueError, OverflowError, OSError):
             pass
         return super().nativeEvent(event_type, message)
 
