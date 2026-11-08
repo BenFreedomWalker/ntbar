@@ -26,7 +26,7 @@ class TaskButton(QToolButton):
         self.setToolTip(window.title)
         icon = load_window_icon(window.hwnd)
         self.setIcon(icon or QApplication.style().standardIcon(QStyle.SP_ComputerIcon))
-        button_height = max(1, panel_height - 8)
+        button_height = max(1, panel_height)
         icon_size = max(8, min(20, button_height - 6))
         self.setIconSize(QSize(icon_size, icon_size))
         self.setFixedSize(max(32, button_width) if show_label else button_height, button_height)
@@ -85,13 +85,13 @@ class SecondaryTaskbar(QWidget):
             QToolButton#panelItem { background:#292e36; color:#f1f1f1;
                 border:1px solid #3c424c; border-radius:0; padding:4px 10px; }
             QToolButton#panelItem:hover { background:#3b424d; }
-            QLabel#clock { color:#e2e5e9; padding:0 8px; }
+            QLabel#clock { color:#e2e5e9; padding:0; }
             QScrollArea { border:0; background:transparent; }
         """)
         layout = QHBoxLayout(self)
         vertical_margin = min(4, max(0, (self.panel_height - 1) // 2))
-        layout.setContentsMargins(7, vertical_margin, 7, vertical_margin)
-        layout.setSpacing(7)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         self.task_scroll = QScrollArea(self)
         self.task_scroll.setWidgetResizable(False)
@@ -196,7 +196,7 @@ class SecondaryTaskbar(QWidget):
             button = QToolButton(self)
             button.setObjectName("panelItem")
             button.setText("Start")
-            button.setFixedHeight(max(1, self.panel_height - 8))
+            button.setFixedHeight(max(1, self.panel_height))
             button.clicked.connect(self.open_start_menu)
             return button
         return QWidget(self)
@@ -387,7 +387,7 @@ class SecondaryTaskbar(QWidget):
             empty = QLabel("No open windows", self.task_host)
             empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             empty.setStyleSheet("color:#858d98; padding:0 10px;")
-            empty.setFixedHeight(max(1, self.panel_height - 8))
+            empty.setFixedHeight(max(1, self.panel_height))
             self.buttons.addWidget(empty)
 
         self.buttons.activate()
@@ -483,9 +483,7 @@ class SecondaryTaskbar(QWidget):
             self.settings.setValue("show_task_labels", self.show_task_labels)
             self.settings.setValue("task_button_width", self.task_button_width)
             self.setFixedHeight(self.panel_height)
-            margins = self.layout().contentsMargins()
-            vertical_margin = min(4, max(0, (self.panel_height - 1) // 2))
-            self.layout().setContentsMargins(margins.left(), vertical_margin, margins.right(), vertical_margin)
+            self.layout().setContentsMargins(0, 0, 0, 0)
             self.rebuild_modules()
             self.place_bar()
             self.signature = None
