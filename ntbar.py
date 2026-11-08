@@ -29,7 +29,7 @@ if sys.platform != "win32":
 
 
 class TaskButton(QToolButton):
-    def __init__(self, window, panel_height, config, parent=None):
+    def __init__(self, window, panel_height, config, button_color, text_color, parent=None):
         super().__init__(parent)
         self.hwnd = window.hwnd
         self.show_label = bool(config.get("show_labels", True))
@@ -65,13 +65,19 @@ class TaskButton(QToolButton):
         self.setProperty("active", window.active)
         self.setProperty("minimized", window.minimized)
         self.setStyleSheet(f"""
-            QToolButton {{ color:#e8e8e8; background:#30343b; border:1px solid #414750;
+            QToolButton {{ color:{text_color}; background:{button_color}; border:1px solid {button_color};
                 border-radius:0; padding:{self.margin_y}px {self.margin_x}px; text-align:left; }}
-            QToolButton:hover {{ background:#414852; border-color:#626d7b; }}
-            QToolButton[active="true"] {{ background:#46566b; border-bottom:2px solid #79a9e8; }}
-            QToolButton[minimized="true"] {{ color:#aeb5bf; }}
+            QToolButton:hover {{ background:{self._shade(button_color, 1.18)}; }}
+            QToolButton[active="true"] {{ background:{self._shade(button_color, 0.82)}; border-bottom:2px solid #79a9e8; }}
+            QToolButton[minimized="true"] {{ color:{text_color}; }}
         """)
         self.clicked.connect(lambda: activate_or_minimize(self.hwnd))
+
+    @staticmethod
+    def _shade(color, factor):
+        from PySide6.QtGui import QColor
+        shade = QColor(color)
+        return shade.lighter(int(factor * 100)).name() if factor >= 1 else shade.darker(int(100 / factor)).name()
 
     def marquee_text(self):
         if not self.show_label or not self.original_title:
@@ -132,6 +138,8 @@ class SecondaryTaskbar(QWidget):
         self.panel_length = self.settings.value("panel_length", 100, type=int)
         self.panel_alignment = self.settings.value("panel_alignment", "center")
         self.panel_color = self.settings.value("panel_color", "#202329")
+        self.button_color = self.settings.value("button_color", "#292e36")
+        self.text_color = self.settings.value("text_color", "#f1f1f1")
         self.items = self.load_items()
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -175,9 +183,9 @@ class SecondaryTaskbar(QWidget):
         if kind == "separator":
             return {"visible": True, "expand": False, "width": 8}
         if kind == "start":
-            return {"label": "Start"}
+            return {"label": "Start", "icon": "", "margin_x": 10, "margin_y": 2}
         if kind == "launcher":
-            return {"name": "Launcher", "icon": "", "command": ""}
+            return {"name": "Launcher", "icon": "", "command": "", "margin_x": 10, "margin_y": 2}
         return {}
 
     def load_items(self):
@@ -220,11 +228,11 @@ class SecondaryTaskbar(QWidget):
 
     def apply_panel_style(self):
         self.setStyleSheet(f"""
-            QWidget#NtBar {{ background:{self.panel_color}; color:#f1f1f1; }}
-            QToolButton#panelItem {{ background:#292e36; color:#f1f1f1;
-                border:1px solid #3c424c; border-radius:0; padding:4px 10px; }}
-            QToolButton#panelItem:hover {{ background:#3b424d; }}
-            QLabel#clockItem {{ color:#e2e5e9; padding:0 6px; }}
+            QWidget#NtBar {{ background:{self.panel_color}; color:{self.text_color}; }}
+            QToolButton#panelItem {{ background:{self.button_color}; color:{self.text_color};
+                border:1px solid {self.button_color}; border-radius:0; }}
+            QToolButton#panelItem:hover {{ background:{TaskButton._shade(self.button_color, 1.18)}; }}
+            QLabel#clockItem {{ color:{self.text_color}; padding:0 6px; }}
             QScrollArea {{ border:0; background:transparent; }}
         """)
 
@@ -235,6 +243,8 @@ class SecondaryTaskbar(QWidget):
             ("panel_length", self.panel_length),
             ("panel_alignment", self.panel_alignment),
             ("panel_color", self.panel_color),
+            ("button_color", self.button_color),
+            ("text_color", self.text_color),
         ):
             self.settings.setValue(key, value)
 
@@ -328,7 +338,14 @@ class SecondaryTaskbar(QWidget):
         if kind == "start":
             button = QToolButton(self)
             button.setObjectName("panelItem")
-            button.setText(str(config.get("label", "Start")))
+            start_label = str(config.get("label", "")).strip()
+            button.setText(start_label)
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon if start_label else Qt.ToolButtonIconOnly)
+            icon_path = str(config.get("icon", ""))
+            if icon_path and os.path.isfile(icon_path):
+                button.setIcon(QIcon(icon_path))
+                button.setIconSize(QSize(max(16, self.panel_height - 12), max(16, self.panel_height - 12)))
+            button.setStyleSheet(f"padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px;")
             button.setFixedHeight(max(1, self.panel_height))
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             button.clicked.connect(self.open_start_menu)
@@ -341,6 +358,7 @@ class SecondaryTaskbar(QWidget):
             button.setToolButtonStyle(
                 Qt.ToolButtonTextBesideIcon if launcher_name else Qt.ToolButtonIconOnly
             )
+            button.setStyleSheet(f"padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px;")
             icon_path = str(config.get("icon", ""))
             if icon_path and os.path.isfile(icon_path):
                 button.setIcon(QIcon(icon_path))
@@ -581,8 +599,33 @@ class SecondaryTaskbar(QWidget):
             width.setValue(int(config.get("width", 8)))
             form.addRow("Width", width)
         elif kind == "start":
-            label = QLineEdit(str(config.get("label", "Start")), dialog)
-            form.addRow("Button text", label)
+            label = QLineEdit(str(config.get("label", "")), dialog)
+            label.setPlaceholderText("Optional — leave empty for an icon-only button")
+            form.addRow("Name (optional)", label)
+            icon_path = {"value": str(config.get("icon", ""))}
+            icon_row = QHBoxLayout()
+            icon_edit = QLineEdit(icon_path["value"], dialog)
+            browse = QPushButton("Browse…", dialog)
+            def choose_start_icon():
+                path, _ = QFileDialog.getOpenFileName(dialog, "Choose Start button icon", "", "Icons and images (*.ico *.png *.bmp *.jpg *.jpeg);;All files (*)")
+                if path:
+                    icon_path["value"] = path
+                    icon_edit.setText(path)
+            browse.clicked.connect(choose_start_icon)
+            icon_edit.textChanged.connect(lambda value: icon_path.update(value=value))
+            icon_row.addWidget(icon_edit)
+            icon_row.addWidget(browse)
+            form.addRow("Icon", icon_row)
+            start_margin_x = QSpinBox(dialog)
+            start_margin_x.setRange(0, 32)
+            start_margin_x.setSuffix(" px")
+            start_margin_x.setValue(int(config.get("margin_x", 10)))
+            form.addRow("Horizontal padding", start_margin_x)
+            start_margin_y = QSpinBox(dialog)
+            start_margin_y.setRange(0, 16)
+            start_margin_y.setSuffix(" px")
+            start_margin_y.setValue(int(config.get("margin_y", 2)))
+            form.addRow("Vertical padding", start_margin_y)
         elif kind == "launcher":
             name = QLineEdit(str(config.get("name", "")), dialog)
             name.setPlaceholderText("Optional — leave empty for an icon-only launcher")
@@ -607,6 +650,16 @@ class SecondaryTaskbar(QWidget):
             command = QLineEdit(str(config.get("command", "")), dialog)
             command.setPlaceholderText(r'C:\Program Files\App\app.exe or a command')
             form.addRow("Launch command", command)
+            launcher_margin_x = QSpinBox(dialog)
+            launcher_margin_x.setRange(0, 32)
+            launcher_margin_x.setSuffix(" px")
+            launcher_margin_x.setValue(int(config.get("margin_x", 10)))
+            form.addRow("Horizontal padding", launcher_margin_x)
+            launcher_margin_y = QSpinBox(dialog)
+            launcher_margin_y.setRange(0, 16)
+            launcher_margin_y.setSuffix(" px")
+            launcher_margin_y.setValue(int(config.get("margin_y", 2)))
+            form.addRow("Vertical padding", launcher_margin_y)
             note = QLabel("The command is started as entered. Arguments and quoted paths are supported.", dialog)
             note.setWordWrap(True)
             form.addRow("", note)
@@ -625,12 +678,14 @@ class SecondaryTaskbar(QWidget):
         elif kind == "separator":
             config.update(visible=visible.currentData(), expand=expand.isChecked(), width=width.value())
         elif kind == "start":
-            config["label"] = label.text().strip() or "Start"
+            config.update(label=label.text().strip(), icon=icon_path["value"],
+                          margin_x=start_margin_x.value(), margin_y=start_margin_y.value())
         elif kind == "launcher":
             if not command.text().strip():
                 QMessageBox.warning(dialog, "Launcher", "Enter a launch command before saving.")
                 return False
-            config.update(name=name.text().strip(), icon=icon_path["value"], command=command.text().strip())
+            config.update(name=name.text().strip(), icon=icon_path["value"], command=command.text().strip(),
+                          margin_x=launcher_margin_x.value(), margin_y=launcher_margin_y.value())
 
         entry["config"] = config
         return True
@@ -676,15 +731,21 @@ class SecondaryTaskbar(QWidget):
         alignment.setCurrentIndex({"left": 0, "center": 1, "right": 2}.get(self.panel_alignment, 1))
         form.addRow("Alignment", alignment)
 
-        color_value = {"value": self.panel_color}
-        color_button = QPushButton(f"Choose… ({self.panel_color})", dialog)
-        def choose_color():
-            color = QColorDialog.getColor(color_value["value"], dialog, "Panel color")
-            if color.isValid():
-                color_value["value"] = color.name()
-                color_button.setText(f"Choose… ({color.name()})")
-        color_button.clicked.connect(choose_color)
-        form.addRow("Panel color", color_button)
+        def color_picker(label, initial):
+            state = {"value": initial}
+            button = QPushButton(f"Choose… ({initial})", dialog)
+            def choose():
+                color = QColorDialog.getColor(state["value"], dialog, label)
+                if color.isValid():
+                    state["value"] = color.name()
+                    button.setText(f"Choose… ({color.name()})")
+            button.clicked.connect(choose)
+            form.addRow(label, button)
+            return state
+
+        panel_color_value = color_picker("Panel color", self.panel_color)
+        button_color_value = color_picker("Button color", self.button_color)
+        text_color_value = color_picker("Text color", self.text_color)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
         buttons.button(QDialogButtonBox.Ok).setText("Apply")
@@ -700,7 +761,9 @@ class SecondaryTaskbar(QWidget):
             self.panel_height = height.value()
             self.panel_length = length.value()
             self.panel_alignment = alignment.currentData()
-            self.panel_color = color_value["value"]
+            self.panel_color = panel_color_value["value"]
+            self.button_color = button_color_value["value"]
+            self.text_color = text_color_value["value"]
             self.persist_panel_settings()
             self.setFixedHeight(self.panel_height)
             self.apply_panel_style()
@@ -725,11 +788,11 @@ class SecondaryTaskbar(QWidget):
             config = host_info["config"]
             if windows:
                 for window in windows:
-                    buttons.addWidget(TaskButton(window, self.panel_height, config, host_info["host"]))
+                    buttons.addWidget(TaskButton(window, self.panel_height, config, self.button_color, self.text_color, host_info["host"]))
             else:
                 empty = QLabel("No open windows", host_info["host"])
                 empty.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-                empty.setStyleSheet("color:#858d98; padding:0 10px;")
+                empty.setStyleSheet(f"color:{self.text_color}; padding:0 10px;")
                 empty.setFixedHeight(max(1, self.panel_height))
                 buttons.addWidget(empty)
 
