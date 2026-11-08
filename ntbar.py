@@ -287,6 +287,21 @@ class SecondaryTaskbar(QWidget):
                 self.setGeometry(*geometry)
             self.raise_()
 
+    def nativeEvent(self, event_type, message):
+        # A translucent Qt top-level window can otherwise let clicks on fully
+        # transparent pixels pass through to the desktop. Keep the whole panel
+        # hit-testable so its context menu also works in transparent/glass mode.
+        try:
+            message_id = ctypes.cast(
+                ctypes.c_void_p(int(message)),
+                ctypes.POINTER(ctypes.c_uint)
+            ).contents.value
+            if message_id == 0x0084:  # WM_NCHITTEST
+                return True, 1  # HTCLIENT
+        except (TypeError, ValueError, OverflowError):
+            pass
+        return super().nativeEvent(event_type, message)
+
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         monitor_menu = menu.addMenu("Move taskbar to monitor")
