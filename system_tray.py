@@ -308,6 +308,7 @@ class SystemTrayWidget(QWidget):
         self.row.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setFixedHeight(max(1, panel_height))
+        self.rebuild_icons()
 
         self.events.changed.connect(self.on_notification_changed)
         self._connected = True
