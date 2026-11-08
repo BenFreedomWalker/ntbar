@@ -186,7 +186,7 @@ class SecondaryTaskbar(QWidget):
             parsed = json.loads(raw) if raw else None
         except (TypeError, ValueError):
             parsed = None
-        if not isinstance(parsed, list) or not parsed:
+        if not isinstance(parsed, list):
             parsed = [
                 {"id": uuid.uuid4().hex, "type": "start", "config": self.default_config("start")},
                 {"id": uuid.uuid4().hex, "type": "tasks", "config": self.default_config("tasks")},
@@ -213,12 +213,7 @@ class SecondaryTaskbar(QWidget):
                 "type": kind,
                 "config": config,
             })
-        return normalized or [
-            {"id": uuid.uuid4().hex, "type": "start", "config": self.default_config("start")},
-            {"id": uuid.uuid4().hex, "type": "tasks", "config": self.default_config("tasks")},
-            {"id": uuid.uuid4().hex, "type": "separator", "config": self.default_config("separator")},
-            {"id": uuid.uuid4().hex, "type": "clock", "config": self.default_config("clock")},
-        ]
+        return normalized
 
     def save_items(self):
         self.settings.setValue("panel_items", json.dumps(self.items))
