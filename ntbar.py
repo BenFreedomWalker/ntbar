@@ -856,6 +856,16 @@ class SecondaryTaskbar(QWidget):
 
     def refresh_windows(self):
         windows = enumerate_windows(int(self.winId()))
+
+        # Keep the focused window at the beginning of every task list.
+        # Moving only the active entry preserves the relative order of all
+        # other windows instead of sorting the entire list.
+        active_window = next((window for window in windows if window.active), None)
+        if active_window is not None:
+            windows = [active_window] + [
+                window for window in windows if window.hwnd != active_window.hwnd
+            ]
+
         signature = tuple((w.hwnd, w.title, w.minimized, w.active) for w in windows)
         if signature == self.signature:
             return
