@@ -69,6 +69,9 @@ class SecondaryTaskbar(QWidget):
         self.panel_alignment = self.settings.value("panel_alignment", "center")
         self.show_task_labels = self.settings.value("show_task_labels", True, type=bool)
         self.task_button_width = self.settings.value("task_button_width", 96, type=int)
+        self.clock_show_date = self.settings.value("clock_show_date", True, type=bool)
+        self.clock_show_seconds = self.settings.value("clock_show_seconds", False, type=bool)
+        self.clock_font_size = self.settings.value("clock_font_size", 9, type=int)
         try:
             self.panel_items = json.loads(self.settings.value("panel_items", json.dumps(self.DEFAULT_PANEL_ITEMS)))
             if not isinstance(self.panel_items, list) or not all(x in self.ITEM_LABELS for x in self.panel_items):
@@ -111,7 +114,7 @@ class SecondaryTaskbar(QWidget):
 
         self.clock = QLabel(self)
         self.clock.setObjectName("clock")
-        self.clock.setFont(QFont("Segoe UI", 9))
+        self.clock.setFont(QFont("Segoe UI", self.clock_font_size))
         self.clock.setAlignment(Qt.AlignCenter)
         # Only an explicit "Expanded separator" may consume free panel space.
         self.clock.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -461,6 +464,20 @@ class SecondaryTaskbar(QWidget):
         alignment.setCurrentIndex({"left": 0, "center": 1, "right": 2}.get(self.panel_alignment, 1))
         form.addRow("Alignment", alignment)
 
+        clock_date = QCheckBox("Show date", dialog)
+        clock_date.setChecked(self.clock_show_date)
+        form.addRow("Clock", clock_date)
+
+        clock_seconds = QCheckBox("Show seconds", dialog)
+        clock_seconds.setChecked(self.clock_show_seconds)
+        form.addRow("", clock_seconds)
+
+        clock_font_size = QSpinBox(dialog)
+        clock_font_size.setRange(6, 32)
+        clock_font_size.setSuffix(" pt")
+        clock_font_size.setValue(self.clock_font_size)
+        form.addRow("Clock font size", clock_font_size)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
         buttons.button(QDialogButtonBox.Ok).setText("Apply")
         buttons.accepted.connect(dialog.accept)
@@ -476,6 +493,9 @@ class SecondaryTaskbar(QWidget):
             self.panel_alignment = alignment.currentData()
             self.show_task_labels = show_labels.isChecked()
             self.task_button_width = button_width.value()
+            self.clock_show_date = clock_date.isChecked()
+            self.clock_show_seconds = clock_seconds.isChecked()
+            self.clock_font_size = clock_font_size.value()
             if self.target:
                 self.settings.setValue("monitor_device", self.target["device"])
             self.settings.setValue("panel_edge", self.panel_edge)
@@ -484,6 +504,11 @@ class SecondaryTaskbar(QWidget):
             self.settings.setValue("panel_alignment", self.panel_alignment)
             self.settings.setValue("show_task_labels", self.show_task_labels)
             self.settings.setValue("task_button_width", self.task_button_width)
+            self.settings.setValue("clock_show_date", self.clock_show_date)
+            self.settings.setValue("clock_show_seconds", self.clock_show_seconds)
+            self.settings.setValue("clock_font_size", self.clock_font_size)
+            self.clock.setFont(QFont("Segoe UI", self.clock_font_size))
+            self.update_clock()
             self.setFixedHeight(self.panel_height)
             self.layout().setContentsMargins(0, 0, 0, 0)
             self.rebuild_modules()
@@ -492,7 +517,15 @@ class SecondaryTaskbar(QWidget):
             self.refresh_windows()
 
     def update_clock(self):
-        self.clock.setText(datetime.now().strftime("%a %d %b   %H:%M"))
+        now = datetime.now()
+        parts = []
+        if self.clock_show_date:
+            parts.append(now.strftime("%a %d %b"))
+        time_format = "%H:%M:%S" if self.clock_show_seconds else "%H:%M"
+        parts.append(now.strftime(time_format))
+        self.clock.setText("   ".join(parts))
+        self.clock.adjustSize()
+        self.clock.updateGeometry()
 
     def check_monitors(self):
         monitors = monitor_list()
