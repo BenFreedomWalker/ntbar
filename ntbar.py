@@ -51,13 +51,7 @@ class TaskButton(QToolButton):
         width = max(32, int(config.get("button_width", 96)))
         if not self.show_label:
             width = button_height
-        icon_size = max(
-            8,
-            min(
-                button_height - 2 * self.margin_y - 2,
-                button_height - 2 * self.margin_x - 2
-            ) if not self.show_label else min(20, button_height - 2 * self.margin_y - 2)
-        )
+        icon_size = max(8, int(config.get("icon_size", 20)))
         self.setIconSize(QSize(icon_size, icon_size))
         self.setFixedSize(width, button_height)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -179,13 +173,13 @@ class SecondaryTaskbar(QWidget):
         if kind == "clock":
             return {"show_date": True, "show_seconds": False, "font_size": 9}
         if kind == "tasks":
-            return {"show_labels": True, "button_width": 96, "margin_x": 4, "margin_y": 2}
+            return {"show_labels": True, "button_width": 96, "margin_x": 4, "margin_y": 2, "icon_size": 20}
         if kind == "separator":
             return {"visible": True, "expand": False, "width": 8}
         if kind == "start":
-            return {"label": "Start", "icon": "", "margin_x": 10, "margin_y": 2}
+            return {"label": "Start", "icon": "", "margin_x": 10, "margin_y": 2, "icon_size": 24}
         if kind == "launcher":
-            return {"name": "Launcher", "icon": "", "command": "", "margin_x": 10, "margin_y": 2}
+            return {"name": "Launcher", "icon": "", "command": "", "margin_x": 10, "margin_y": 2, "icon_size": 24}
         return {}
 
     def load_items(self):
@@ -344,7 +338,8 @@ class SecondaryTaskbar(QWidget):
             icon_path = str(config.get("icon", ""))
             if icon_path and os.path.isfile(icon_path):
                 button.setIcon(QIcon(icon_path))
-                button.setIconSize(QSize(max(16, self.panel_height - 12), max(16, self.panel_height - 12)))
+                icon_size = max(8, int(config.get("icon_size", 24)))
+                button.setIconSize(QSize(icon_size, icon_size))
             button.setStyleSheet(f"padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px;")
             button.setFixedHeight(max(1, self.panel_height))
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -362,7 +357,8 @@ class SecondaryTaskbar(QWidget):
             icon_path = str(config.get("icon", ""))
             if icon_path and os.path.isfile(icon_path):
                 button.setIcon(QIcon(icon_path))
-                button.setIconSize(QSize(max(16, self.panel_height - 12), max(16, self.panel_height - 12)))
+                icon_size = max(8, int(config.get("icon_size", 24)))
+                button.setIconSize(QSize(icon_size, icon_size))
             button.setFixedHeight(max(1, self.panel_height))
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             command = str(config.get("command", "")).strip()
@@ -584,6 +580,11 @@ class SecondaryTaskbar(QWidget):
             margin_y.setSuffix(" px")
             margin_y.setValue(int(config.get("margin_y", 2)))
             form.addRow("Vertical padding", margin_y)
+            task_icon_size = QSpinBox(dialog)
+            task_icon_size.setRange(8, 64)
+            task_icon_size.setSuffix(" px")
+            task_icon_size.setValue(int(config.get("icon_size", 20)))
+            form.addRow("Icon size", task_icon_size)
         elif kind == "separator":
             visible = QComboBox(dialog)
             visible.addItem("Visible line", True)
@@ -626,6 +627,11 @@ class SecondaryTaskbar(QWidget):
             start_margin_y.setSuffix(" px")
             start_margin_y.setValue(int(config.get("margin_y", 2)))
             form.addRow("Vertical padding", start_margin_y)
+            start_icon_size = QSpinBox(dialog)
+            start_icon_size.setRange(8, 64)
+            start_icon_size.setSuffix(" px")
+            start_icon_size.setValue(int(config.get("icon_size", 24)))
+            form.addRow("Icon size", start_icon_size)
         elif kind == "launcher":
             name = QLineEdit(str(config.get("name", "")), dialog)
             name.setPlaceholderText("Optional — leave empty for an icon-only launcher")
@@ -660,6 +666,11 @@ class SecondaryTaskbar(QWidget):
             launcher_margin_y.setSuffix(" px")
             launcher_margin_y.setValue(int(config.get("margin_y", 2)))
             form.addRow("Vertical padding", launcher_margin_y)
+            launcher_icon_size = QSpinBox(dialog)
+            launcher_icon_size.setRange(8, 64)
+            launcher_icon_size.setSuffix(" px")
+            launcher_icon_size.setValue(int(config.get("icon_size", 24)))
+            form.addRow("Icon size", launcher_icon_size)
             note = QLabel("The command is started as entered. Arguments and quoted paths are supported.", dialog)
             note.setWordWrap(True)
             form.addRow("", note)
@@ -674,18 +685,22 @@ class SecondaryTaskbar(QWidget):
         if kind == "clock":
             config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(), font_size=font_size.value())
         elif kind == "tasks":
-            config.update(show_labels=show_labels.isChecked(), button_width=width.value(), margin_x=margin_x.value(), margin_y=margin_y.value())
+            config.update(show_labels=show_labels.isChecked(), button_width=width.value(),
+                          margin_x=margin_x.value(), margin_y=margin_y.value(),
+                          icon_size=task_icon_size.value())
         elif kind == "separator":
             config.update(visible=visible.currentData(), expand=expand.isChecked(), width=width.value())
         elif kind == "start":
             config.update(label=label.text().strip(), icon=icon_path["value"],
-                          margin_x=start_margin_x.value(), margin_y=start_margin_y.value())
+                          margin_x=start_margin_x.value(), margin_y=start_margin_y.value(),
+                          icon_size=start_icon_size.value())
         elif kind == "launcher":
             if not command.text().strip():
                 QMessageBox.warning(dialog, "Launcher", "Enter a launch command before saving.")
                 return False
             config.update(name=name.text().strip(), icon=icon_path["value"], command=command.text().strip(),
-                          margin_x=launcher_margin_x.value(), margin_y=launcher_margin_y.value())
+                          margin_x=launcher_margin_x.value(), margin_y=launcher_margin_y.value(),
+                          icon_size=launcher_icon_size.value())
 
         entry["config"] = config
         return True
