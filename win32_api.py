@@ -212,3 +212,31 @@ def reposition_appbar(hwnd, monitor_handle, thickness, edge="bottom", length_per
             top = monitor.top + (full - height) // 2
         left = data.rc.left if edge == "left" else data.rc.right - thickness
         return (left, top, thickness, height)
+
+
+class ACCENT_POLICY(ctypes.Structure):
+    _fields_ = [("AccentState", ctypes.c_int), ("AccentFlags", ctypes.c_int), ("GradientColor", ctypes.c_uint), ("AnimationId", ctypes.c_int)]
+
+class WINDOWCOMPOSITIONATTRIBDATA(ctypes.Structure):
+    _fields_ = [("Attribute", ctypes.c_int), ("Data", ctypes.c_void_p), ("SizeOfData", ctypes.c_size_t)]
+
+def set_acrylic(hwnd, enabled, color="#202329", opacity=78):
+    """Toggle the Windows acrylic backdrop for the panel window."""
+    try:
+        set_attribute = user32.SetWindowCompositionAttribute
+        set_attribute.argtypes = [wintypes.HWND, ctypes.POINTER(WINDOWCOMPOSITIONATTRIBDATA)]
+        set_attribute.restype = wintypes.BOOL
+        policy = ACCENT_POLICY()
+        if enabled:
+            from PySide6.QtGui import QColor
+            shade = QColor(color)
+            alpha = max(8, min(245, int(opacity) * 255 // 100))
+            policy.AccentState = 4
+            policy.AccentFlags = 2
+            policy.GradientColor = (alpha << 24) | (shade.blue() << 16) | (shade.green() << 8) | shade.red()
+        else:
+            policy.AccentState = 0
+        data = WINDOWCOMPOSITIONATTRIBDATA(19, ctypes.cast(ctypes.pointer(policy), ctypes.c_void_p), ctypes.sizeof(policy))
+        return bool(set_attribute(hwnd, ctypes.byref(data)))
+    except (AttributeError, OSError):
+        return False
