@@ -3,7 +3,7 @@ import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal, Qt, QSize
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QToolButton, QMenu, QFileIconProvider, QSizePolicy
 from PySide6.QtCore import QFileInfo
 
@@ -71,6 +71,7 @@ class TrayEntry:
     guid: bytes
     exe: str
     tip: str
+    icon_pixels: bytes = b""
 
 class TrayEvents(QObject):
     changed = Signal(int, object)
@@ -90,16 +91,69 @@ class NotificationCallback(COMObject if COMTYPES_AVAILABLE else object):
             hwnd = int(data.hWnd or 0)
             uid = int(data.uID)
             guid = bytes(data.guidItem)
+            icon_pixels = extract_icon_pixels(data.hIcon) if data.hIcon else b""
             exe = data.pszExeName or ""
             tip = data.pszTip or ""
             key = guid.hex() if any(guid) else f"{hwnd}:{uid}"
             self.events.changed.emit(int(event), {
                 "key": key, "hwnd": hwnd, "uid": uid, "guid": guid,
-                "exe": exe, "tip": tip
+                "exe": exe, "tip": tip, "icon_pixels": icon_pixels
             })
         except Exception:
             pass
         return 0
+
+
+def extract_icon_pixels(hicon, size=32):
+    """Copy a notification HICON into portable BGRA pixels before Explorer can release it."""
+    if not hicon:
+        return b""
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG),
+                ("biHeight", wintypes.LONG), ("biPlanes", wintypes.WORD),
+                ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG),
+                ("biYPelsPerMeter", wintypes.LONG), ("biClrUsed", wintypes.DWORD),
+                ("biClrImportant", wintypes.DWORD),
+            ]
+
+        class BITMAPINFO(ctypes.Structure):
+            _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 3)]
+
+        info = BITMAPINFO()
+        info.bmiHeader = BITMAPINFOHEADER(
+            ctypes.sizeof(BITMAPINFOHEADER), size, -size, 1, 32, 0,
+            size * size * 4, 0, 0, 0, 0
+        )
+        bits = ctypes.c_void_p()
+        dc = user32.GetDC(None)
+        memory_dc = gdi32.CreateCompatibleDC(dc)
+        bitmap = gdi32.CreateDIBSection(
+            memory_dc, ctypes.byref(info), 0, ctypes.byref(bits), None, 0
+        )
+        if not bitmap or not bits.value:
+            if memory_dc:
+                gdi32.DeleteDC(memory_dc)
+            if dc:
+                user32.ReleaseDC(None, dc)
+            return b""
+        previous = gdi32.SelectObject(memory_dc, bitmap)
+        gdi32.PatBlt(memory_dc, 0, 0, size, size, 0x00000042)
+        ok = user32.DrawIconEx(memory_dc, 0, 0, hicon, size, size, 0, None, 0x0003)
+        pixels = ctypes.string_at(bits.value, size * size * 4) if ok else b""
+        if previous:
+            gdi32.SelectObject(memory_dc, previous)
+        gdi32.DeleteObject(bitmap)
+        gdi32.DeleteDC(memory_dc)
+        user32.ReleaseDC(None, dc)
+        return pixels
+    except Exception:
+        return b""
 
 class WindowsNotificationArea:
     """Read-only mirror of Explorer's notification area using its ITrayNotify COM interface."""
@@ -154,7 +208,10 @@ class NotificationIconButton(QToolButton):
         self.setFixedSize(icon_size + 8, max(icon_size + 6, 24))
         self.setIconSize(QSize(icon_size, icon_size))
         self.setToolTip(entry.tip or os.path.basename(entry.exe) or "Notification icon")
-        if entry.exe and os.path.isfile(entry.exe):
+        if entry.icon_pixels and len(entry.icon_pixels) == 32 * 32 * 4:
+            image = QImage(entry.icon_pixels, 32, 32, 32 * 4, QImage.Format_ARGB32).copy()
+            self.setIcon(QIcon(QPixmap.fromImage(image)))
+        elif entry.exe and os.path.isfile(entry.exe):
             icon = QFileIconProvider().icon(QFileInfo(entry.exe))
             if not icon.isNull():
                 self.setIcon(icon)
@@ -247,7 +304,7 @@ class SystemTrayWidget(QWidget):
         else:
             self.entries[key] = TrayEntry(
                 key, data["hwnd"], data["uid"], data["guid"],
-                data["exe"], data["tip"]
+                data["exe"], data["tip"], data.get("icon_pixels", b"")
             )
         self.rebuild_icons()
 
