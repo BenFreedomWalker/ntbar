@@ -8,7 +8,7 @@ import uuid
 import winreg
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QSize, QUrl, QSettings
+from PySide6.QtCore import Qt, QTimer, QSize, QUrl, QSettings, QEvent
 from PySide6.QtGui import QFont, QDesktopServices, QFontMetrics, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu,
@@ -146,6 +146,7 @@ class SecondaryTaskbar(QWidget):
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("NtBar")
         self.setFixedHeight(self.panel_height)
         self.apply_panel_style()
@@ -157,6 +158,9 @@ class SecondaryTaskbar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.rebuild_modules()
+        # Catch right-clicks on child widgets too; Qt otherwise dispatches
+        # context-menu events to the child under the pointer, not the panel.
+        QApplication.instance().installEventFilter(self)
 
         self.target = None
         self.registered = False
@@ -307,7 +311,21 @@ class SecondaryTaskbar(QWidget):
             pass
         return super().nativeEvent(event_type, message)
 
+    def eventFilter(self, watched, event):
+        if (
+            event.type() == QEvent.MouseButtonPress
+            and event.button() == Qt.RightButton
+            and isinstance(watched, QWidget)
+            and watched.window() is self
+        ):
+            self.show_panel_context_menu(event.globalPosition().toPoint())
+            return True
+        return super().eventFilter(watched, event)
+
     def contextMenuEvent(self, event):
+        self.show_panel_context_menu(event.globalPos())
+
+    def show_panel_context_menu(self, global_pos):
         menu = QMenu(self)
         monitor_menu = menu.addMenu("Move taskbar to monitor")
         for number, monitor in enumerate(monitor_list(), 1):
@@ -325,7 +343,7 @@ class SecondaryTaskbar(QWidget):
         menu.addAction("About NtBar", self.show_about)
         menu.addSeparator()
         menu.addAction("Exit NtBar", self.close)
-        menu.exec(event.globalPos())
+        menu.exec(global_pos)
 
     def make_tasklist(self, config):
         scroll = QScrollArea(self)
