@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog,
     QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QCheckBox,
     QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QInputDialog,
-    QColorDialog, QFileDialog, QLineEdit, QFontComboBox
+    QColorDialog, QFileDialog, QLineEdit, QFontComboBox, QSystemTrayIcon
 )
 
 from win32_api import (
@@ -140,6 +140,7 @@ class SecondaryTaskbar(QWidget):
         self.button_color = self.settings.value("button_color", "#292e36")
         self.text_color = self.settings.value("text_color", "#f1f1f1")
         self.items = self.load_items()
+        self._exiting = False
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
@@ -174,6 +175,8 @@ class SecondaryTaskbar(QWidget):
         self.monitor_timer = QTimer(self)
         self.monitor_timer.timeout.connect(self.check_monitors)
         self.monitor_timer.start(2500)
+
+        self.create_tray_icon()
 
     def default_config(self, kind):
         if kind == "clock":
@@ -913,12 +916,59 @@ class SecondaryTaskbar(QWidget):
         self.settings.setValue("monitor_device", monitor["device"])
         self.place_bar()
 
+    def create_tray_icon(self):
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(QApplication.style().standardIcon(QStyle.SP_ComputerIcon))
+        self.tray_icon.setToolTip("NtBar — Secondary taskbar")
+
+        menu = QMenu(self)
+        self.tray_visibility_action = menu.addAction("Hide NtBar")
+        self.tray_visibility_action.triggered.connect(self.toggle_panel_visibility)
+        menu.addSeparator()
+        menu.addAction("Panel Items…", self.show_panel_items)
+        menu.addAction("Panel Settings…", self.show_settings)
+        menu.addAction("Refresh windows", self.refresh_windows)
+        menu.addAction("About NtBar", self.show_about)
+        menu.addSeparator()
+        menu.addAction("Exit NtBar", self.exit_application)
+
+        menu.aboutToShow.connect(self.update_tray_menu)
+        self.tray_icon.setContextMenu(menu)
+        self.tray_icon.activated.connect(self.on_tray_activated)
+        self.tray_icon.show()
+
+    def update_tray_menu(self):
+        self.tray_visibility_action.setText("Hide NtBar" if self.isVisible() else "Show NtBar")
+
+    def toggle_panel_visibility(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.place_bar()
+            self.raise_()
+
+    def on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.toggle_panel_visibility()
+
+    def exit_application(self):
+        self._exiting = True
+        self.close()
+
     def closeEvent(self, event):
+        if not self._exiting:
+            event.ignore()
+            self.hide()
+            self.update_tray_menu()
+            return
+
         for timer in (self.refresh_timer, self.clock_timer, self.monitor_timer):
             timer.stop()
         if self.registered:
             remove_appbar(int(self.winId()))
             self.registered = False
+        self.tray_icon.hide()
         event.accept()
         app = QApplication.instance()
         if app is not None:
