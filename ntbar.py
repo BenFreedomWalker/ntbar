@@ -89,7 +89,6 @@ class SecondaryTaskbar(QWidget):
             QScrollArea { border:0; background:transparent; }
         """)
         layout = QHBoxLayout(self)
-        vertical_margin = min(4, max(0, (self.panel_height - 1) // 2))
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -106,8 +105,8 @@ class SecondaryTaskbar(QWidget):
         self.buttons = QHBoxLayout(self.task_host)
         self.buttons.setContentsMargins(0, 0, 0, 0)
         self.buttons.setSpacing(2)
-        self.buttons.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.task_scroll.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.buttons.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.task_scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.task_scroll.setWidget(self.task_host)
 
         self.clock = QLabel(self)
@@ -400,11 +399,11 @@ class SecondaryTaskbar(QWidget):
             content_width += self.buttons.spacing() * (len(windows) - 1)
 
         content_width = max(content_width, 1)
-        inner_height = max(1, self.panel_height - min(8, self.panel_height - 1))
+        inner_height = max(1, self.panel_height)
         self.task_host.setFixedSize(content_width, inner_height)
 
         self.task_scroll.setMinimumWidth(0)
-        available_width = max(1, self.width() - 14)
+        available_width = max(1, self.width())
         self.task_scroll.setFixedSize(min(content_width, available_width), inner_height)
 
     def show_settings(self):
