@@ -38,6 +38,8 @@ class TaskButton(QToolButton):
         self.margin_y = max(0, int(config.get("margin_y", 2)))
         self.corner_radius = max(0, int(config.get("corner_radius", 0)))
         background = SecondaryTaskbar.item_background(config, button_color)
+        hover_background = SecondaryTaskbar.item_background(config, self._shade(button_color, 1.18))
+        active_background = SecondaryTaskbar.item_background(config, self._shade(button_color, 0.82))
         self.setFont(QFont(str(config.get("font_family", "Segoe UI")), max(6, int(config.get("font_size", 9)))))
         self.scroll_offset = 0
         self.marquee_timer = QTimer(self)
@@ -64,8 +66,8 @@ class TaskButton(QToolButton):
         self.setStyleSheet(f"""
             QToolButton {{ color:{text_color}; background:{background}; border:1px solid {background};
                 border-radius:{self.corner_radius}px; padding:{self.margin_y}px {self.margin_x}px; text-align:left; }}
-            QToolButton:hover {{ background:{self._shade(button_color, 1.18)}; }}
-            QToolButton[active="true"] {{ background:{self._shade(button_color, 0.82)}; border-bottom:2px solid #79a9e8; }}
+            QToolButton:hover {{ background:{hover_background}; }}
+            QToolButton[active="true"] {{ background:{active_background}; border-bottom:2px solid #79a9e8; }}
             QToolButton[minimized="true"] {{ color:{text_color}; }}
         """)
         self.clicked.connect(lambda: activate_or_minimize(self.hwnd))
