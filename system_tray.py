@@ -125,22 +125,22 @@ def extract_icon_pixels(hicon, size=32):
         class BITMAPINFO(ctypes.Structure):
             _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 3)]
 
-        user32.GetDC.argtypes = [wintypes.HWND]
-        user32.GetDC.restype = wintypes.HDC
-        user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
-        user32.DrawIconEx.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.HICON,
-                                      ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.HBRUSH, wintypes.UINT]
+        user32.GetDC.argtypes = [ctypes.c_void_p]
+        user32.GetDC.restype = ctypes.c_void_p
+        user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        user32.DrawIconEx.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
+                                      ctypes.c_int, ctypes.c_int, wintypes.UINT, ctypes.c_void_p, wintypes.UINT]
         user32.DrawIconEx.restype = wintypes.BOOL
-        gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
-        gdi32.CreateCompatibleDC.restype = wintypes.HDC
-        gdi32.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.POINTER(BITMAPINFO), wintypes.UINT,
-                                          ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD]
-        gdi32.CreateDIBSection.restype = wintypes.HBITMAP
-        gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
-        gdi32.SelectObject.restype = wintypes.HGDIOBJ
-        gdi32.PatBlt.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.DWORD]
-        gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
-        gdi32.DeleteDC.argtypes = [wintypes.HDC]
+        gdi32.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
+        gdi32.CreateCompatibleDC.restype = ctypes.c_void_p
+        gdi32.CreateDIBSection.argtypes = [ctypes.c_void_p, ctypes.POINTER(BITMAPINFO), wintypes.UINT,
+                                          ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, wintypes.DWORD]
+        gdi32.CreateDIBSection.restype = ctypes.c_void_p
+        gdi32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        gdi32.SelectObject.restype = ctypes.c_void_p
+        gdi32.PatBlt.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.DWORD]
+        gdi32.DeleteObject.argtypes = [ctypes.c_void_p]
+        gdi32.DeleteDC.argtypes = [ctypes.c_void_p]
 
         info = BITMAPINFO()
         info.bmiHeader = BITMAPINFOHEADER(
