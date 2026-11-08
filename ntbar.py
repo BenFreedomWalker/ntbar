@@ -113,6 +113,8 @@ class SecondaryTaskbar(QWidget):
         self.clock.setObjectName("clock")
         self.clock.setFont(QFont("Segoe UI", 9))
         self.clock.setAlignment(Qt.AlignCenter)
+        # Only an explicit "Expanded separator" may consume free panel space.
+        self.clock.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.rebuild_modules()
 
         self.target = None
@@ -196,6 +198,7 @@ class SecondaryTaskbar(QWidget):
             button.setObjectName("panelItem")
             button.setText("Start")
             button.setFixedHeight(max(1, self.panel_height))
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             button.clicked.connect(self.open_start_menu)
             return button
         return QWidget(self)
