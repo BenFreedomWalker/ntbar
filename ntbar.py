@@ -298,7 +298,7 @@ class SecondaryTaskbar(QWidget):
         menu.addAction("Refresh windows", self.refresh_windows)
         menu.addAction("About NtBar", self.show_about)
         menu.addSeparator()
-        menu.addAction("Exit NtBar", self.close)
+        menu.addAction("Exit NtBar", self.exit_application)
         menu.exec(global_pos)
 
     def make_tasklist(self, config):
