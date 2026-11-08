@@ -8,7 +8,7 @@ import uuid
 import winreg
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QSize, QUrl, QSettings, QEvent
+from PySide6.QtCore import Qt, QTimer, QSize, QUrl, QSettings
 from PySide6.QtGui import QFont, QDesktopServices, QFontMetrics, QIcon
 from PySide6.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QLabel, QToolButton, QMenu,
@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from win32_api import (
     enumerate_windows, activate_or_minimize, close_window, monitor_list,
-    register_appbar, remove_appbar, reposition_appbar, load_window_icon, set_acrylic
+    register_appbar, remove_appbar, reposition_appbar, load_window_icon
 )
 
 
@@ -139,18 +139,10 @@ class SecondaryTaskbar(QWidget):
         self.panel_color = self.settings.value("panel_color", "#202329")
         self.button_color = self.settings.value("button_color", "#292e36")
         self.text_color = self.settings.value("text_color", "#f1f1f1")
-        self.panel_background_mode = self.settings.value("panel_background_mode", "solid")
-        self.panel_opacity = self.settings.value("panel_opacity", 78, type=int)
         self.items = self.load_items()
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        # Only transparent mode needs a layered Qt window. Solid and acrylic
-        # modes use a normal opaque HWND so their background is not alpha-blended.
-        self.setAttribute(
-            Qt.WA_TranslucentBackground,
-            self.panel_background_mode in ("transparent", "glass"),
-        )
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("NtBar")
         self.setFixedHeight(self.panel_height)
@@ -163,9 +155,6 @@ class SecondaryTaskbar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.rebuild_modules()
-        # Catch right-clicks on child widgets too; Qt otherwise dispatches
-        # context-menu events to the child under the pointer, not the panel.
-        QApplication.instance().installEventFilter(self)
 
         self.target = None
         self.registered = False
@@ -173,7 +162,6 @@ class SecondaryTaskbar(QWidget):
         self.target = self.default_monitor()
         self.registered = register_appbar(int(self.winId()))
         self.place_bar()
-        self.apply_panel_effect()
         self.refresh_windows()
         self.update_clocks()
 
@@ -240,53 +228,17 @@ class SecondaryTaskbar(QWidget):
 
     @staticmethod
     def item_background(config, color):
-        mode = config.get("background_mode", "solid")
-        if mode == "transparent":
-            alpha = 0
-        elif mode == "glass":
-            alpha = max(8, min(245, int(config.get("background_opacity", 72)) * 255 // 100))
-        else:
-            alpha = 255
+        # Panel items use opaque backgrounds; transparency and acrylic are disabled.
         from PySide6.QtGui import QColor
-        shade = QColor(color)
-        shade.setAlpha(alpha)
-        return shade.name(QColor.HexArgb)
+        return QColor(color).name()
 
     def apply_panel_style(self):
-        if self.panel_background_mode == "transparent":
-            # Keep a non-zero alpha so Windows still hit-tests the panel.
-            from PySide6.QtGui import QColor
-            hit_test_background = QColor(self.panel_color)
-            hit_test_background.setAlpha(1)
-            background = hit_test_background.name(QColor.HexArgb)
-        elif self.panel_background_mode == "glass":
-            background = self.item_background(
-                {"background_mode": "glass", "background_opacity": self.panel_opacity},
-                self.panel_color,
-            )
-        else:
-            # Solid mode uses a normal opaque HWND and a fully opaque color.
-            background = self.panel_color
         self.setStyleSheet(f"""
-            QWidget#NtBar {{ background:{background}; color:{self.text_color}; }}
+            QWidget#NtBar {{ background:{self.panel_color}; color:{self.text_color}; }}
             QToolButton#panelItem {{ color:{self.text_color}; border:0; }}
             QLabel#clockItem {{ color:{self.text_color}; padding:0 6px; }}
             QScrollArea {{ border:0; background:transparent; }}
         """)
-
-    def apply_panel_effect(self):
-        set_acrylic(int(self.winId()), self.panel_background_mode == "glass", self.panel_color, self.panel_opacity)
-
-    def update_panel_translucency(self):
-        desired = self.panel_background_mode in ("transparent", "glass")
-        if self.testAttribute(Qt.WA_TranslucentBackground) == desired:
-            return
-        old_hwnd = int(self.winId())
-        if self.registered:
-            remove_appbar(old_hwnd)
-        self.setAttribute(Qt.WA_TranslucentBackground, desired)
-        if self.registered:
-            self.registered = register_appbar(int(self.winId()))
 
     def persist_panel_settings(self):
         for key, value in (
@@ -297,8 +249,6 @@ class SecondaryTaskbar(QWidget):
             ("panel_color", self.panel_color),
             ("button_color", self.button_color),
             ("text_color", self.text_color),
-            ("panel_background_mode", self.panel_background_mode),
-            ("panel_opacity", self.panel_opacity),
         ):
             self.settings.setValue(key, value)
 
@@ -319,30 +269,6 @@ class SecondaryTaskbar(QWidget):
             if geometry:
                 self.setGeometry(*geometry)
             self.raise_()
-
-    def nativeEvent(self, event_type, message):
-        # PySide passes a pointer to the native MSG structure. The message ID
-        # follows the HWND field; reading the first DWORD reads part of HWND.
-        try:
-            msg_ptr = int(message)
-            message_offset = ctypes.sizeof(ctypes.c_void_p)
-            message_id = ctypes.c_uint.from_address(msg_ptr + message_offset).value
-            if message_id == 0x0084:  # WM_NCHITTEST
-                return True, 1  # HTCLIENT
-        except (TypeError, ValueError, OverflowError, OSError):
-            pass
-        return super().nativeEvent(event_type, message)
-
-    def eventFilter(self, watched, event):
-        if (
-            event.type() == QEvent.MouseButtonPress
-            and event.button() == Qt.RightButton
-            and isinstance(watched, QWidget)
-            and watched.window() is self
-        ):
-            self.show_panel_context_menu(event.globalPosition().toPoint())
-            return True
-        return super().eventFilter(watched, event)
 
     def contextMenuEvent(self, event):
         self.show_panel_context_menu(event.globalPos())
@@ -640,19 +566,6 @@ class SecondaryTaskbar(QWidget):
         form = QFormLayout(dialog)
 
         if kind != "separator":
-            background_mode = QComboBox(dialog)
-            background_mode.addItem("Solid", "solid")
-            background_mode.addItem("Transparent", "transparent")
-            background_mode.addItem("Glass / translucent", "glass")
-            background_mode.setCurrentIndex({"solid": 0, "transparent": 1, "glass": 2}.get(config.get("background_mode", "solid"), 0))
-            form.addRow("Background", background_mode)
-            background_opacity = QSpinBox(dialog)
-            background_opacity.setRange(5, 100)
-            background_opacity.setSuffix(" %")
-            background_opacity.setValue(int(config.get("background_opacity", 72)))
-            background_opacity.setEnabled(background_mode.currentData() == "glass")
-            background_mode.currentIndexChanged.connect(lambda _index: background_opacity.setEnabled(background_mode.currentData() == "glass"))
-            form.addRow("Glass opacity", background_opacity)
             font_family = QFontComboBox(dialog)
             font_family.setCurrentFont(QFont(str(config.get("font_family", "Segoe UI"))))
             form.addRow("Font", font_family)
@@ -810,8 +723,7 @@ class SecondaryTaskbar(QWidget):
             return False
 
         if kind != "separator":
-            config.update(background_mode=background_mode.currentData(), background_opacity=background_opacity.value(),
-                          font_family=font_family.currentFont().family(), font_size=font_size.value(), corner_radius=corner_radius.value())
+            config.update(font_family=font_family.currentFont().family(), font_size=font_size.value(), corner_radius=corner_radius.value())
         if kind == "clock":
             config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(),
                           time_format=time_format.currentData(), show_am_pm=show_am_pm.isChecked(),
@@ -891,19 +803,6 @@ class SecondaryTaskbar(QWidget):
             return state
 
         panel_color_value = color_picker("Panel color", self.panel_color)
-        panel_background_mode = QComboBox(dialog)
-        panel_background_mode.addItem("Solid", "solid")
-        panel_background_mode.addItem("Transparent", "transparent")
-        panel_background_mode.addItem("Glass / acrylic", "glass")
-        panel_background_mode.setCurrentIndex({"solid": 0, "transparent": 1, "glass": 2}.get(self.panel_background_mode, 0))
-        form.addRow("Panel background", panel_background_mode)
-        panel_opacity = QSpinBox(dialog)
-        panel_opacity.setRange(5, 100)
-        panel_opacity.setSuffix(" %")
-        panel_opacity.setValue(self.panel_opacity)
-        panel_opacity.setEnabled(panel_background_mode.currentData() == "glass")
-        panel_background_mode.currentIndexChanged.connect(lambda _index: panel_opacity.setEnabled(panel_background_mode.currentData() == "glass"))
-        form.addRow("Glass opacity", panel_opacity)
         button_color_value = color_picker("Button color", self.button_color)
         text_color_value = color_picker("Text color", self.text_color)
 
@@ -922,15 +821,11 @@ class SecondaryTaskbar(QWidget):
             self.panel_length = length.value()
             self.panel_alignment = alignment.currentData()
             self.panel_color = panel_color_value["value"]
-            self.panel_background_mode = panel_background_mode.currentData()
-            self.panel_opacity = panel_opacity.value()
             self.button_color = button_color_value["value"]
             self.text_color = text_color_value["value"]
             self.persist_panel_settings()
-            self.update_panel_translucency()
             self.setFixedHeight(self.panel_height)
             self.apply_panel_style()
-            self.apply_panel_effect()
             self.rebuild_modules()
             self.place_bar()
 
