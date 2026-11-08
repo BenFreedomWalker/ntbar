@@ -1,4 +1,5 @@
 import ctypes
+import os
 from ctypes import wintypes
 from dataclasses import dataclass
 from PySide6.QtCore import QFileInfo
@@ -75,6 +76,23 @@ def _title(hwnd):
     user32.GetWindowTextW(hwnd, buffer, len(buffer))
     return buffer.value.strip()
 
+def _process_name(hwnd):
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if not pid.value:
+        return ""
+    process = kernel32.OpenProcess(0x1000, False, pid.value)
+    if not process:
+        return ""
+    try:
+        size = wintypes.DWORD(32768)
+        path = ctypes.create_unicode_buffer(size.value)
+        if kernel32.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(size)):
+            return os.path.basename(path.value).lower()
+        return ""
+    finally:
+        kernel32.CloseHandle(process)
+
 def enumerate_windows(own_hwnd=0):
     found = []
     active = user32.GetForegroundWindow()
@@ -87,6 +105,11 @@ def enumerate_windows(own_hwnd=0):
             return True
         title = _title(hwnd)
         if title:
+            # This is a Windows shell/input surface, not a user task.
+            if _process_name(hwnd) == "textinputhost.exe":
+                return True
+            if title.casefold() == "microsoft text input application":
+                return True
             found.append(WindowInfo(int(hwnd), title, bool(user32.IsIconic(hwnd)), hwnd == active))
         return True
     user32.EnumWindows(callback_type(callback), 0)
