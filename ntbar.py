@@ -142,13 +142,13 @@ class SecondaryTaskbar(QWidget):
 
         self.task_hosts = []
         self.module_widgets = []
+        self.signature = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.rebuild_modules()
 
         self.target = None
-        self.signature = None
         self.registered = False
         self.show()
         self.target = self.default_monitor()
@@ -370,6 +370,7 @@ class SecondaryTaskbar(QWidget):
             self.module_widgets.append(widget)
             layout.addWidget(widget, 1 if entry["type"] == "separator" and entry["config"].get("expand", False) else 0)
         self.update_clocks()
+        self.signature = None
         self.refresh_windows()
 
     def find_open_shell(self):
