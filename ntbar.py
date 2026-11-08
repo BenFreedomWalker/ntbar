@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QStyle, QMessageBox, QSizePolicy, QDialog,
     QFormLayout, QComboBox, QSpinBox, QDialogButtonBox, QCheckBox,
     QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QInputDialog,
-    QColorDialog, QFileDialog, QLineEdit
+    QColorDialog, QFileDialog, QLineEdit, QFontComboBox
 )
 
 from win32_api import (
@@ -36,6 +36,8 @@ class TaskButton(QToolButton):
         self.original_title = window.title
         self.margin_x = max(0, int(config.get("margin_x", 4)))
         self.margin_y = max(0, int(config.get("margin_y", 2)))
+        self.corner_radius = max(0, int(config.get("corner_radius", 0)))
+        self.setFont(QFont(str(config.get("font_family", "Segoe UI")), max(6, int(config.get("font_size", 9)))))
         self.scroll_offset = 0
         self.marquee_timer = QTimer(self)
         self.marquee_timer.setInterval(180)
@@ -60,7 +62,7 @@ class TaskButton(QToolButton):
         self.setProperty("minimized", window.minimized)
         self.setStyleSheet(f"""
             QToolButton {{ color:{text_color}; background:{button_color}; border:1px solid {button_color};
-                border-radius:0; padding:{self.margin_y}px {self.margin_x}px; text-align:left; }}
+                border-radius:{self.corner_radius}px; padding:{self.margin_y}px {self.margin_x}px; text-align:left; }}
             QToolButton:hover {{ background:{self._shade(button_color, 1.18)}; }}
             QToolButton[active="true"] {{ background:{self._shade(button_color, 0.82)}; border-bottom:2px solid #79a9e8; }}
             QToolButton[minimized="true"] {{ color:{text_color}; }}
@@ -171,15 +173,15 @@ class SecondaryTaskbar(QWidget):
 
     def default_config(self, kind):
         if kind == "clock":
-            return {"show_date": True, "show_seconds": False, "font_size": 9}
+            return {"show_date": True, "show_seconds": False, "font_size": 9, "font_family": "Segoe UI", "corner_radius": 0, "time_format": "24h", "show_am_pm": True, "show_date_on_hover": True}
         if kind == "tasks":
-            return {"show_labels": True, "button_width": 96, "margin_x": 4, "margin_y": 2, "icon_size": 20}
+            return {"show_labels": True, "button_width": 96, "margin_x": 4, "margin_y": 2, "icon_size": 20, "font_family": "Segoe UI", "font_size": 9, "corner_radius": 0}
         if kind == "separator":
             return {"visible": True, "expand": False, "width": 8}
         if kind == "start":
-            return {"label": "Start", "icon": "", "margin_x": 10, "margin_y": 2, "icon_size": 24}
+            return {"label": "Start", "icon": "", "margin_x": 10, "margin_y": 2, "icon_size": 24, "font_family": "Segoe UI", "font_size": 9, "corner_radius": 0}
         if kind == "launcher":
-            return {"name": "Launcher", "icon": "", "command": "", "margin_x": 10, "margin_y": 2, "icon_size": 24}
+            return {"name": "Launcher", "icon": "", "command": "", "margin_x": 10, "margin_y": 2, "icon_size": 24, "font_family": "Segoe UI", "font_size": 9, "corner_radius": 0}
         return {}
 
     def load_items(self):
@@ -310,7 +312,9 @@ class SecondaryTaskbar(QWidget):
             label.setObjectName("clockItem")
             label.setAlignment(Qt.AlignCenter)
             label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            label.setFont(QFont("Segoe UI", max(6, int(config.get("font_size", 9)))))
+            label.setFont(QFont(str(config.get("font_family", "Segoe UI")), max(6, int(config.get("font_size", 9)))))
+            label.setStyleSheet(f"color:{self.text_color}; background:{self.button_color}; border-radius:{max(0, int(config.get('corner_radius', 0)))}px; padding:0 6px;")
+            label.setToolTipDuration(5000)
             label.setProperty("item_id", entry["id"])
             return label
         if kind == "separator":
@@ -332,6 +336,7 @@ class SecondaryTaskbar(QWidget):
         if kind == "start":
             button = QToolButton(self)
             button.setObjectName("panelItem")
+            button.setFont(QFont(str(config.get("font_family", "Segoe UI")), max(6, int(config.get("font_size", 9)))))
             start_label = str(config.get("label", "")).strip()
             button.setText(start_label)
             button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon if start_label else Qt.ToolButtonIconOnly)
@@ -340,7 +345,7 @@ class SecondaryTaskbar(QWidget):
                 button.setIcon(QIcon(icon_path))
                 icon_size = max(8, int(config.get("icon_size", 24)))
                 button.setIconSize(QSize(icon_size, icon_size))
-            button.setStyleSheet(f"padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px;")
+            button.setStyleSheet(f"padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px; border-radius:{max(0, int(config.get('corner_radius', 0)))}px;")
             button.setFixedHeight(max(1, self.panel_height))
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             button.clicked.connect(self.open_start_menu)
@@ -348,6 +353,7 @@ class SecondaryTaskbar(QWidget):
         if kind == "launcher":
             button = QToolButton(self)
             button.setObjectName("panelItem")
+            button.setFont(QFont(str(config.get("font_family", "Segoe UI")), max(6, int(config.get("font_size", 9)))))
             launcher_name = str(config.get("name", "")).strip()
             button.setText(launcher_name)
             button.setToolButtonStyle(
@@ -548,18 +554,40 @@ class SecondaryTaskbar(QWidget):
         dialog.setWindowTitle(f"{self.ITEM_LABELS[kind]} Settings")
         form = QFormLayout(dialog)
 
+        font_family = QFontComboBox(dialog)
+        font_family.setCurrentFont(QFont(str(config.get("font_family", "Segoe UI"))))
+        form.addRow("Font", font_family)
+        font_size = QSpinBox(dialog)
+        font_size.setRange(6, 32)
+        font_size.setSuffix(" pt")
+        font_size.setValue(int(config.get("font_size", 9)))
+        form.addRow("Font size", font_size)
+        corner_radius = QSpinBox(dialog)
+        corner_radius.setRange(0, 32)
+        corner_radius.setSuffix(" px")
+        corner_radius.setValue(int(config.get("corner_radius", 0)))
+        form.addRow("Corner radius", corner_radius)
+
         if kind == "clock":
-            show_date = QCheckBox("Show date", dialog)
+            show_date = QCheckBox("Show date on the panel", dialog)
             show_date.setChecked(bool(config.get("show_date", True)))
             form.addRow("Date", show_date)
             show_seconds = QCheckBox("Show seconds", dialog)
             show_seconds.setChecked(bool(config.get("show_seconds", False)))
             form.addRow("Time", show_seconds)
-            font_size = QSpinBox(dialog)
-            font_size.setRange(6, 32)
-            font_size.setSuffix(" pt")
-            font_size.setValue(int(config.get("font_size", 9)))
-            form.addRow("Font size", font_size)
+            time_format = QComboBox(dialog)
+            time_format.addItem("24-hour (14:30)", "24h")
+            time_format.addItem("12-hour (2:30)", "12h")
+            time_format.setCurrentIndex(0 if config.get("time_format", "24h") == "24h" else 1)
+            form.addRow("Time format", time_format)
+            show_am_pm = QCheckBox("Show AM / PM", dialog)
+            show_am_pm.setChecked(bool(config.get("show_am_pm", True)))
+            show_am_pm.setEnabled(time_format.currentData() == "12h")
+            time_format.currentIndexChanged.connect(lambda _index: show_am_pm.setEnabled(time_format.currentData() == "12h"))
+            form.addRow("12-hour clock", show_am_pm)
+            hover_date = QCheckBox("Show full date near cursor on hover", dialog)
+            hover_date.setChecked(bool(config.get("show_date_on_hover", True)))
+            form.addRow("Hover", hover_date)
         elif kind == "tasks":
             show_labels = QCheckBox("Show window titles", dialog)
             show_labels.setChecked(bool(config.get("show_labels", True)))
@@ -682,8 +710,11 @@ class SecondaryTaskbar(QWidget):
         if dialog.exec() != QDialog.Accepted:
             return False
 
+        config.update(font_family=font_family.currentFont().family(), font_size=font_size.value(), corner_radius=corner_radius.value())
         if kind == "clock":
-            config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(), font_size=font_size.value())
+            config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(),
+                          time_format=time_format.currentData(), show_am_pm=show_am_pm.isChecked(),
+                          show_date_on_hover=hover_date.isChecked())
         elif kind == "tasks":
             config.update(show_labels=show_labels.isChecked(), button_width=width.value(),
                           margin_x=margin_x.value(), margin_y=margin_y.value(),
@@ -836,7 +867,16 @@ class SecondaryTaskbar(QWidget):
             if config.get("show_date", True):
                 parts.append(now.strftime("%a %d %b"))
             parts.append(now.strftime("%H:%M:%S" if config.get("show_seconds", False) else "%H:%M"))
+            if config.get("time_format", "24h") == "12h":
+                time_format = "%I:%M:%S" if config.get("show_seconds", False) else "%I:%M"
+                clock_text = now.strftime(time_format).lstrip("0")
+                if config.get("show_am_pm", True):
+                    clock_text += now.strftime(" %p")
+            else:
+                clock_text = now.strftime("%H:%M:%S" if config.get("show_seconds", False) else "%H:%M")
+            parts.append(clock_text)
             label.setText("   ".join(parts))
+            label.setToolTip(now.strftime("%A, %B %d, %Y") if config.get("show_date_on_hover", True) else "")
             label.adjustSize()
             label.updateGeometry()
 
