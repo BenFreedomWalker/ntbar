@@ -149,7 +149,7 @@ class SecondaryTaskbar(QWidget):
         # modes use a normal opaque HWND so their background is not alpha-blended.
         self.setAttribute(
             Qt.WA_TranslucentBackground,
-            self.panel_background_mode == "transparent",
+            self.panel_background_mode in ("transparent", "glass"),
         )
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("NtBar")
@@ -259,9 +259,13 @@ class SecondaryTaskbar(QWidget):
             hit_test_background = QColor(self.panel_color)
             hit_test_background.setAlpha(1)
             background = hit_test_background.name(QColor.HexArgb)
+        elif self.panel_background_mode == "glass":
+            background = self.item_background(
+                {"background_mode": "glass", "background_opacity": self.panel_opacity},
+                self.panel_color,
+            )
         else:
-            # Acrylic opacity is supplied by DWM, not by making the Qt
-            # surface translucent. Solid mode is always fully opaque.
+            # Solid mode uses a normal opaque HWND and a fully opaque color.
             background = self.panel_color
         self.setStyleSheet(f"""
             QWidget#NtBar {{ background:{background}; color:{self.text_color}; }}
@@ -274,7 +278,7 @@ class SecondaryTaskbar(QWidget):
         set_acrylic(int(self.winId()), self.panel_background_mode == "glass", self.panel_color, self.panel_opacity)
 
     def update_panel_translucency(self):
-        desired = self.panel_background_mode == "transparent"
+        desired = self.panel_background_mode in ("transparent", "glass")
         if self.testAttribute(Qt.WA_TranslucentBackground) == desired:
             return
         old_hwnd = int(self.winId())
