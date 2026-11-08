@@ -9,7 +9,6 @@ from PySide6.QtCore import QFileInfo
 
 try:
     from comtypes import COMObject, GUID, HRESULT, COMMETHOD, IUnknown
-    from comtypes.automation import VARIANT
     from comtypes.client import CreateObject
     from ctypes import POINTER, c_ulong, c_void_p
     COMTYPES_AVAILABLE = True
@@ -17,9 +16,10 @@ except ImportError:
     COMTYPES_AVAILABLE = False
 
 CLSID_TRAY_NOTIFY = "{25DEAD04-1EAC-4911-9E3A-AD0A4AB560FD}"
-IID_TRAY_NOTIFY = GUID("{D133CE13-3537-48BA-93A7-AFCD5D2053B4}")
-IID_TRAY_NOTIFY_LEGACY = GUID("{FB852B2C-6BAD-4605-9551-F15F87830935}")
-IID_NOTIFICATION_CB = GUID("{D782CCBA-AFB0-43F1-94DB-FDA3779EACCB}")
+if COMTYPES_AVAILABLE:
+    IID_TRAY_NOTIFY = GUID("{D133CE13-3537-48BA-93A7-AFCD5D2053B4}")
+    IID_TRAY_NOTIFY_LEGACY = GUID("{FB852B2C-6BAD-4605-9551-F15F87830935}")
+    IID_NOTIFICATION_CB = GUID("{D782CCBA-AFB0-43F1-94DB-FDA3779EACCB}")
 
 class NOTIFYITEM(ctypes.Structure):
     _fields_ = [
@@ -277,10 +277,11 @@ def activate_notification_icon(entry, right_click=False):
     MOUSEEVENTF_RIGHTUP = 0x0010
     MOUSEEVENTF_LEFTDOWN = 0x0002
     MOUSEEVENTF_LEFTUP = 0x0004
-    flags = (MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP) if right_click else (
-        MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP
+    down, up = (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP) if right_click else (
+        MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP
     )
-    user32.mouse_event(flags, 0, 0, 0, 0)
+    user32.mouse_event(down, 0, 0, 0, 0)
+    user32.mouse_event(up, 0, 0, 0, 0)
     return True
 
 _shared_events = None
