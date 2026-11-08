@@ -1,5 +1,6 @@
 import signal
 import sys
+import ctypes
 import json
 import os
 import subprocess
@@ -52,7 +53,7 @@ class SecondaryTaskbar(QWidget):
     DEFAULT_HEIGHT = 44
     DEFAULT_PANEL_ITEMS = ["start", "tasks", "separator", "clock"]
     ITEM_LABELS = {
-        "start": "Start menu (placeholder)",
+        "start": "Start menu (Open-Shell / Windows)",
         "tasks": "Tasklist",
         "clock": "Clock",
         "separator": "Separator",
@@ -214,34 +215,85 @@ class SecondaryTaskbar(QWidget):
             layout.addWidget(widget, 1 if item == "expand" else 0)
         self.update_clock()
 
-    def open_start_menu(self):
+    def find_open_shell(self):
         candidates = []
-        for key_path in (
-            r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\StartMenu.exe",
-            r"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths\\StartMenu.exe",
-        ):
-            try:
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
-                    candidates.append(winreg.QueryValue(key, None))
-            except OSError:
-                pass
-
         for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):
             if base:
                 candidates.append(os.path.join(base, "Open-Shell", "StartMenu.exe"))
 
-        executable = next((path for path in candidates if path and os.path.isfile(path)), None)
-        if not executable:
-            QMessageBox.information(
-                self, "Open-Shell not found",
-                "Install Open-Shell to use this Start button. NtBar will open its menu here once Open-Shell is installed."
-            )
-            return
-        try:
-            subprocess.Popen([executable, "-togglenew"], close_fds=True)
-        except OSError as error:
-            QMessageBox.warning(self, "Open-Shell", f"Could not open the Start menu.\\n{error}")
+        uninstall_roots = (
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+        )
+        for hive, root in uninstall_roots:
+            try:
+                with winreg.OpenKey(hive, root) as key:
+                    count = winreg.QueryInfoKey(key)[0]
+                    for index in range(count):
+                        try:
+                            subkey_name = winreg.EnumKey(key, index)
+                            with winreg.OpenKey(key, subkey_name) as subkey:
+                                display_name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                                if "open-shell" not in display_name.lower():
+                                    continue
+                                install_dir = winreg.QueryValueEx(subkey, "InstallLocation")[0]
+                                if install_dir:
+                                    candidates.append(os.path.join(install_dir, "StartMenu.exe"))
+                        except OSError:
+                            continue
+            except OSError:
+                continue
 
+        seen = set()
+        for path in candidates:
+            if not path:
+                continue
+            path = os.path.abspath(os.path.expandvars(path))
+            normalized = os.path.normcase(path)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            if not os.path.isfile(path):
+                continue
+            # Avoid unrelated StartMenu.exe files: accept only the known
+            # Open-Shell install directory or a registered Open-Shell location.
+            if os.path.basename(os.path.dirname(path)).lower() == "open-shell":
+                return path
+            for hive, root in uninstall_roots:
+                try:
+                    with winreg.OpenKey(hive, root) as key:
+                        for index in range(winreg.QueryInfoKey(key)[0]):
+                            try:
+                                with winreg.OpenKey(key, winreg.EnumKey(key, index)) as subkey:
+                                    name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                                    location = winreg.QueryValueEx(subkey, "InstallLocation")[0]
+                                    if "open-shell" in name.lower() and location and os.path.normcase(os.path.abspath(location)) == os.path.normcase(os.path.dirname(path)):
+                                        return path
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+        return None
+
+    def open_windows_start_menu(self):
+        user32 = ctypes.windll.user32
+        vk_lwin = 0x5B
+        keyeventf_keyup = 0x0002
+        user32.keybd_event(vk_lwin, 0, 0, 0)
+        user32.keybd_event(vk_lwin, 0, keyeventf_keyup, 0)
+
+    def open_start_menu(self):
+        executable = self.find_open_shell()
+        if executable:
+            try:
+                subprocess.Popen([executable, "-togglenew"], close_fds=True)
+                return
+            except OSError:
+                pass
+
+        # Open-Shell is unavailable or could not be started: use Windows' own menu.
+        self.open_windows_start_menu()
 
     def show_panel_items(self):
         dialog = QDialog(self)
