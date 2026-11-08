@@ -9,6 +9,7 @@ import ctypes
 import os
 import struct
 import sys
+import time
 from ctypes import wintypes
 from dataclasses import dataclass
 
@@ -344,6 +345,7 @@ class NotificationIconButton(QToolButton):
         self.customContextMenuRequested.connect(self._context_menu)
         self._last_pos = (0, 0)
         self._pressed_button = None
+        self._last_click = {}
         self._refresh_icon()
 
     def _refresh_icon(self):
@@ -365,7 +367,11 @@ class NotificationIconButton(QToolButton):
         return ((int(pt.y) & 0xFFFF) << 16) | (int(pt.x) & 0xFFFF)
 
     def enterEvent(self, event):
-        forward_icon_event(self.entry, 0x0400, self._cursor_param())  # WM_MOUSEMOVE
+        point = self._cursor_param()
+        forward_icon_event(self.entry, 0x02A1, point)  # WM_MOUSEHOVER
+        if self.entry.version > 3:
+            forward_icon_event(self.entry, 0x0406, point)  # NIN_POPUPOPEN
+        forward_icon_event(self.entry, 0x0200, point)  # WM_MOUSEMOVE
         super().enterEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -373,15 +379,25 @@ class NotificationIconButton(QToolButton):
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event):
-        forward_icon_event(self.entry, 0x02A3, self._cursor_param())  # WM_MOUSELEAVE
+        point = self._cursor_param()
+        forward_icon_event(self.entry, 0x02A3, point)  # WM_MOUSELEAVE
+        if self.entry.version > 3:
+            forward_icon_event(self.entry, 0x0407, point)  # NIN_POPUPCLOSE
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
         self._pressed_button = event.button()
         self._last_pos = self._cursor_param()
-        msg = {Qt.LeftButton: 0x0201, Qt.RightButton: 0x0204, Qt.MiddleButton: 0x0207}.get(event.button())
+        down = {Qt.LeftButton: 0x0201, Qt.RightButton: 0x0204, Qt.MiddleButton: 0x0207}
+        double = {Qt.LeftButton: 0x0203, Qt.RightButton: 0x0206, Qt.MiddleButton: 0x0209}
+        button = event.button()
+        now = time.monotonic()
+        previous = self._last_click.get(button, 0.0)
+        threshold = user32.GetDoubleClickTime() / 1000.0
+        msg = double.get(button) if previous and now - previous <= threshold else down.get(button)
         if msg:
             forward_icon_event(self.entry, msg, self._last_pos)
+        self._last_click[button] = now
         event.accept()
 
     def mouseReleaseEvent(self, event):
