@@ -336,8 +336,11 @@ class SecondaryTaskbar(QWidget):
         if kind == "launcher":
             button = QToolButton(self)
             button.setObjectName("panelItem")
-            button.setText(str(config.get("name", "Launcher")))
-            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            launcher_name = str(config.get("name", "")).strip()
+            button.setText(launcher_name)
+            button.setToolButtonStyle(
+                Qt.ToolButtonTextBesideIcon if launcher_name else Qt.ToolButtonIconOnly
+            )
             icon_path = str(config.get("icon", ""))
             if icon_path and os.path.isfile(icon_path):
                 button.setIcon(QIcon(icon_path))
@@ -427,7 +430,9 @@ class SecondaryTaskbar(QWidget):
         config = entry["config"]
         title = self.ITEM_LABELS[kind]
         if kind == "launcher":
-            title += f' — {config.get("name", "Launcher")}'
+            name = str(config.get("name", "")).strip()
+            if name:
+                title += f" — {name}"
         elif kind == "start":
             title += f' — {config.get("label", "Start")}'
         return title
@@ -579,8 +584,9 @@ class SecondaryTaskbar(QWidget):
             label = QLineEdit(str(config.get("label", "Start")), dialog)
             form.addRow("Button text", label)
         elif kind == "launcher":
-            name = QLineEdit(str(config.get("name", "Launcher")), dialog)
-            form.addRow("Name", name)
+            name = QLineEdit(str(config.get("name", "")), dialog)
+            name.setPlaceholderText("Optional — leave empty for an icon-only launcher")
+            form.addRow("Name (optional)", name)
             icon_path = {"value": str(config.get("icon", ""))}
             icon_row = QHBoxLayout()
             icon_edit = QLineEdit(icon_path["value"], dialog)
@@ -624,7 +630,7 @@ class SecondaryTaskbar(QWidget):
             if not command.text().strip():
                 QMessageBox.warning(dialog, "Launcher", "Enter a launch command before saving.")
                 return False
-            config.update(name=name.text().strip() or "Launcher", icon=icon_path["value"], command=command.text().strip())
+            config.update(name=name.text().strip(), icon=icon_path["value"], command=command.text().strip())
 
         entry["config"] = config
         return True
