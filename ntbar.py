@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QColorDialog, QFileDialog, QLineEdit, QFontComboBox, QSystemTrayIcon
 )
 
+from system_tray import SystemTrayWidget
+
 from win32_api import (
     enumerate_windows, activate_or_minimize, close_window, monitor_list,
     register_appbar, remove_appbar, reposition_appbar, load_window_icon
@@ -127,6 +129,7 @@ class SecondaryTaskbar(QWidget):
         "clock": "Clock",
         "separator": "Separator",
         "launcher": "Launcher",
+        "system_tray": "System Tray",
     }
 
     def __init__(self):
@@ -189,6 +192,8 @@ class SecondaryTaskbar(QWidget):
             return {"label": "Start", "icon": "", "margin_x": 10, "margin_y": 2, "icon_size": 24, "font_family": "Segoe UI", "font_size": 9, "corner_radius": 0}
         if kind == "launcher":
             return {"name": "Launcher", "icon": "", "command": "", "margin_x": 10, "margin_y": 2, "icon_size": 24, "font_family": "Segoe UI", "font_size": 9, "corner_radius": 0}
+        if kind == "system_tray":
+            return {"icon_size": 18, "spacing": 2, "font_family": "Segoe UI", "font_size": 9, "corner_radius": 0}
         return {}
 
     def load_items(self):
@@ -321,6 +326,8 @@ class SecondaryTaskbar(QWidget):
         config = entry["config"]
         if kind == "tasks":
             return self.make_tasklist(config)
+        if kind == "system_tray":
+            return SystemTrayWidget(config, self.panel_height, self)
         if kind == "clock":
             label = QLabel(self)
             label.setObjectName("clockItem")
@@ -394,6 +401,8 @@ class SecondaryTaskbar(QWidget):
             item = layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                if hasattr(widget, "shutdown"):
+                    widget.shutdown()
                 widget.deleteLater()
         self.task_hosts = []
         self.module_widgets = []
@@ -603,6 +612,17 @@ class SecondaryTaskbar(QWidget):
             hover_date = QCheckBox("Show full date near cursor on hover", dialog)
             hover_date.setChecked(bool(config.get("show_date_on_hover", True)))
             form.addRow("Hover", hover_date)
+        elif kind == "system_tray":
+            tray_icon_size = QSpinBox(dialog)
+            tray_icon_size.setRange(8, 48)
+            tray_icon_size.setSuffix(" px")
+            tray_icon_size.setValue(int(config.get("icon_size", 18)))
+            form.addRow("Icon size", tray_icon_size)
+            tray_spacing = QSpinBox(dialog)
+            tray_spacing.setRange(0, 16)
+            tray_spacing.setSuffix(" px")
+            tray_spacing.setValue(int(config.get("spacing", 2)))
+            form.addRow("Icon spacing", tray_spacing)
         elif kind == "tasks":
             show_labels = QCheckBox("Show window titles", dialog)
             show_labels.setChecked(bool(config.get("show_labels", True)))
@@ -731,6 +751,8 @@ class SecondaryTaskbar(QWidget):
             config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(),
                           time_format=time_format.currentData(), show_am_pm=show_am_pm.isChecked(),
                           show_date_on_hover=hover_date.isChecked())
+        elif kind == "system_tray":
+            config.update(icon_size=tray_icon_size.value(), spacing=tray_spacing.value())
         elif kind == "tasks":
             config.update(show_labels=show_labels.isChecked(), button_width=width.value(),
                           margin_x=margin_x.value(), margin_y=margin_y.value(),
@@ -963,6 +985,9 @@ class SecondaryTaskbar(QWidget):
             self.update_tray_menu()
             return
 
+        for widget in self.module_widgets:
+            if hasattr(widget, "shutdown"):
+                widget.shutdown()
         for timer in (self.refresh_timer, self.clock_timer, self.monitor_timer):
             timer.stop()
         if self.registered:
