@@ -13,7 +13,7 @@ import time
 from ctypes import wintypes
 from dataclasses import dataclass
 
-from PySide6.QtCore import QObject, Signal, Qt, QSize, QEvent
+from PySide6.QtCore import QObject, Signal, Qt, QSize, QEvent, QTimer
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QToolButton, QSizePolicy, QMenu,
@@ -517,8 +517,19 @@ class SystemTrayWidget(QWidget):
         if _shared_users == 0:
             _shared_provider.start()
         _shared_users += 1
+        # ITrayNotify does not expose callback-message/version fields for newly
+        # registered icons. Re-read Explorer's toolbar periodically to fill
+        # those fields, just as ExplorerTrayService does during initialization.
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setInterval(2000)
+        self._refresh_timer.timeout.connect(self._refresh_explorer_icons)
+        self._refresh_timer.start()
         self.rebuild_icons()
         self.setToolTip(_shared_provider.error or "Windows notification area")
+
+    def _refresh_explorer_icons(self):
+        if _shared_provider is not None:
+            _shared_provider._enumerate_explorer_icons()
 
     def on_notification_changed(self, event, data):
         global _shared_entries
@@ -568,6 +579,7 @@ class SystemTrayWidget(QWidget):
         if not self._connected:
             return
         self._connected = False
+        self._refresh_timer.stop()
         _shared_widgets.discard(self)
         try:
             self.events.changed.disconnect(self.on_notification_changed)
