@@ -154,6 +154,7 @@ class SecondaryTaskbar(QWidget):
 
         self.task_hosts = []
         self.module_widgets = []
+        self.task_window_order = []
         self.signature = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -856,6 +857,18 @@ class SecondaryTaskbar(QWidget):
 
     def refresh_windows(self):
         windows = enumerate_windows(int(self.winId()))
+
+        # EnumWindows returns Z-order, which changes whenever focus changes.
+        # Preserve the task buttons' existing order and append only new windows.
+        current_by_hwnd = {window.hwnd: window for window in windows}
+        self.task_window_order = [
+            hwnd for hwnd in self.task_window_order if hwnd in current_by_hwnd
+        ]
+        known = set(self.task_window_order)
+        self.task_window_order.extend(
+            window.hwnd for window in windows if window.hwnd not in known
+        )
+        windows = [current_by_hwnd[hwnd] for hwnd in self.task_window_order]
 
         signature = tuple((w.hwnd, w.title, w.minimized, w.active) for w in windows)
         if signature == self.signature:
