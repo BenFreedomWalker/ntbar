@@ -32,6 +32,57 @@ user32 = ctypes.WinDLL("user32", use_last_error=True) if sys.platform == "win32"
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True) if sys.platform == "win32" else None
 gdi32 = ctypes.WinDLL("gdi32", use_last_error=True) if sys.platform == "win32" else None
 
+if sys.platform == "win32":
+    # Explicit pointer-sized signatures are essential on 64-bit Windows.
+    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.FindWindowW.restype = wintypes.HWND
+    user32.FindWindowExW.argtypes = [wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.FindWindowExW.restype = wintypes.HWND
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, ctypes.c_size_t, ctypes.c_ssize_t]
+    user32.SendMessageW.restype = ctypes.c_ssize_t
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.IsWindow.argtypes = [wintypes.HWND]
+    user32.IsWindow.restype = wintypes.BOOL
+    user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+    user32.GetCursorPos.restype = wintypes.BOOL
+    user32.SendNotifyMessageW.argtypes = [wintypes.HWND, wintypes.UINT, ctypes.c_size_t, ctypes.c_ssize_t]
+    user32.SendNotifyMessageW.restype = wintypes.BOOL
+    user32.AllowSetForegroundWindow.argtypes = [wintypes.DWORD]
+    user32.GetDoubleClickTime.restype = wintypes.UINT
+    user32.GetDC.argtypes = [wintypes.HWND]
+    user32.GetDC.restype = ctypes.c_void_p
+    user32.ReleaseDC.argtypes = [wintypes.HWND, ctypes.c_void_p]
+    user32.ReleaseDC.restype = ctypes.c_int
+    user32.DrawIconEx.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, wintypes.HICON,
+                                  ctypes.c_int, ctypes.c_int, wintypes.UINT, ctypes.c_void_p, wintypes.UINT]
+    user32.DrawIconEx.restype = wintypes.BOOL
+
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.VirtualAllocEx.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
+                                        wintypes.DWORD, wintypes.DWORD]
+    kernel32.VirtualAllocEx.restype = ctypes.c_void_p
+    kernel32.ReadProcessMemory.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                                           ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    kernel32.ReadProcessMemory.restype = wintypes.BOOL
+    kernel32.VirtualFreeEx.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, wintypes.DWORD]
+    kernel32.VirtualFreeEx.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    gdi32.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
+    gdi32.CreateCompatibleDC.restype = ctypes.c_void_p
+    gdi32.CreateDIBSection.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.UINT,
+                                       ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, wintypes.DWORD]
+    gdi32.CreateDIBSection.restype = ctypes.c_void_p
+    gdi32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    gdi32.SelectObject.restype = ctypes.c_void_p
+    gdi32.PatBlt.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                             ctypes.c_int, wintypes.DWORD]
+    gdi32.DeleteObject.argtypes = [ctypes.c_void_p]
+    gdi32.DeleteDC.argtypes = [ctypes.c_void_p]
+
 CLSID_TRAY_NOTIFY = "{25DEAD04-1EAC-4911-9E3A-AD0A4AB560FD}"
 if COMTYPES_AVAILABLE:
     IID_TRAY_NOTIFY = GUID("{D133CE13-3537-48BA-93A7-AFCD5D2053B4}")
