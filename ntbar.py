@@ -359,7 +359,7 @@ class SecondaryTaskbar(QWidget):
             button.setToolButtonStyle(
                 Qt.ToolButtonTextBesideIcon if launcher_name else Qt.ToolButtonIconOnly
             )
-            button.setStyleSheet(f"padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px;")
+            button.setStyleSheet(f"padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px; border-radius:{max(0, int(config.get('corner_radius', 0)))}px;")
             icon_path = str(config.get("icon", ""))
             if icon_path and os.path.isfile(icon_path):
                 button.setIcon(QIcon(icon_path))
@@ -554,19 +554,20 @@ class SecondaryTaskbar(QWidget):
         dialog.setWindowTitle(f"{self.ITEM_LABELS[kind]} Settings")
         form = QFormLayout(dialog)
 
-        font_family = QFontComboBox(dialog)
-        font_family.setCurrentFont(QFont(str(config.get("font_family", "Segoe UI"))))
-        form.addRow("Font", font_family)
-        font_size = QSpinBox(dialog)
-        font_size.setRange(6, 32)
-        font_size.setSuffix(" pt")
-        font_size.setValue(int(config.get("font_size", 9)))
-        form.addRow("Font size", font_size)
-        corner_radius = QSpinBox(dialog)
-        corner_radius.setRange(0, 32)
-        corner_radius.setSuffix(" px")
-        corner_radius.setValue(int(config.get("corner_radius", 0)))
-        form.addRow("Corner radius", corner_radius)
+        if kind != "separator":
+            font_family = QFontComboBox(dialog)
+            font_family.setCurrentFont(QFont(str(config.get("font_family", "Segoe UI"))))
+            form.addRow("Font", font_family)
+            font_size = QSpinBox(dialog)
+            font_size.setRange(6, 32)
+            font_size.setSuffix(" pt")
+            font_size.setValue(int(config.get("font_size", 9)))
+            form.addRow("Font size", font_size)
+            corner_radius = QSpinBox(dialog)
+            corner_radius.setRange(0, 32)
+            corner_radius.setSuffix(" px")
+            corner_radius.setValue(int(config.get("corner_radius", 0)))
+            form.addRow("Corner radius", corner_radius)
 
         if kind == "clock":
             show_date = QCheckBox("Show date on the panel", dialog)
@@ -710,7 +711,8 @@ class SecondaryTaskbar(QWidget):
         if dialog.exec() != QDialog.Accepted:
             return False
 
-        config.update(font_family=font_family.currentFont().family(), font_size=font_size.value(), corner_radius=corner_radius.value())
+        if kind != "separator":
+            config.update(font_family=font_family.currentFont().family(), font_size=font_size.value(), corner_radius=corner_radius.value())
         if kind == "clock":
             config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(),
                           time_format=time_format.currentData(), show_am_pm=show_am_pm.isChecked(),
@@ -866,7 +868,6 @@ class SecondaryTaskbar(QWidget):
             parts = []
             if config.get("show_date", True):
                 parts.append(now.strftime("%a %d %b"))
-            parts.append(now.strftime("%H:%M:%S" if config.get("show_seconds", False) else "%H:%M"))
             if config.get("time_format", "24h") == "12h":
                 time_format = "%I:%M:%S" if config.get("show_seconds", False) else "%I:%M"
                 clock_text = now.strftime(time_format).lstrip("0")
