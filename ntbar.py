@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from win32_api import (
     enumerate_windows, activate_or_minimize, close_window, monitor_list,
-    register_appbar, remove_appbar, reposition_appbar, load_window_icon
+    register_appbar, remove_appbar, reposition_appbar, load_window_icon, set_acrylic
 )
 
 
@@ -37,6 +37,7 @@ class TaskButton(QToolButton):
         self.margin_x = max(0, int(config.get("margin_x", 4)))
         self.margin_y = max(0, int(config.get("margin_y", 2)))
         self.corner_radius = max(0, int(config.get("corner_radius", 0)))
+        background = SecondaryTaskbar.item_background(config, button_color)
         self.setFont(QFont(str(config.get("font_family", "Segoe UI")), max(6, int(config.get("font_size", 9)))))
         self.scroll_offset = 0
         self.marquee_timer = QTimer(self)
@@ -61,7 +62,7 @@ class TaskButton(QToolButton):
         self.setProperty("active", window.active)
         self.setProperty("minimized", window.minimized)
         self.setStyleSheet(f"""
-            QToolButton {{ color:{text_color}; background:{button_color}; border:1px solid {button_color};
+            QToolButton {{ color:{text_color}; background:{background}; border:1px solid {background};
                 border-radius:{self.corner_radius}px; padding:{self.margin_y}px {self.margin_x}px; text-align:left; }}
             QToolButton:hover {{ background:{self._shade(button_color, 1.18)}; }}
             QToolButton[active="true"] {{ background:{self._shade(button_color, 0.82)}; border-bottom:2px solid #79a9e8; }}
@@ -136,10 +137,13 @@ class SecondaryTaskbar(QWidget):
         self.panel_color = self.settings.value("panel_color", "#202329")
         self.button_color = self.settings.value("button_color", "#292e36")
         self.text_color = self.settings.value("text_color", "#f1f1f1")
+        self.panel_background_mode = self.settings.value("panel_background_mode", "solid")
+        self.panel_opacity = self.settings.value("panel_opacity", 78, type=int)
         self.items = self.load_items()
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setObjectName("NtBar")
         self.setFixedHeight(self.panel_height)
         self.apply_panel_style()
@@ -158,6 +162,7 @@ class SecondaryTaskbar(QWidget):
         self.target = self.default_monitor()
         self.registered = register_appbar(int(self.winId()))
         self.place_bar()
+        self.apply_panel_effect()
         self.refresh_windows()
         self.update_clocks()
 
@@ -222,15 +227,31 @@ class SecondaryTaskbar(QWidget):
     def save_items(self):
         self.settings.setValue("panel_items", json.dumps(self.items))
 
+    @staticmethod
+    def item_background(config, color):
+        mode = config.get("background_mode", "solid")
+        if mode == "transparent":
+            alpha = 0
+        elif mode == "glass":
+            alpha = max(8, min(245, int(config.get("background_opacity", 72)) * 255 // 100))
+        else:
+            alpha = 255
+        from PySide6.QtGui import QColor
+        shade = QColor(color)
+        shade.setAlpha(alpha)
+        return shade.name(QColor.HexArgb)
+
     def apply_panel_style(self):
+        background = self.item_background({"background_mode": self.panel_background_mode, "background_opacity": self.panel_opacity}, self.panel_color)
         self.setStyleSheet(f"""
-            QWidget#NtBar {{ background:{self.panel_color}; color:{self.text_color}; }}
-            QToolButton#panelItem {{ background:{self.button_color}; color:{self.text_color};
-                border:1px solid {self.button_color}; border-radius:0; }}
-            QToolButton#panelItem:hover {{ background:{TaskButton._shade(self.button_color, 1.18)}; }}
+            QWidget#NtBar {{ background:{background}; color:{self.text_color}; }}
+            QToolButton#panelItem {{ color:{self.text_color}; border:0; }}
             QLabel#clockItem {{ color:{self.text_color}; padding:0 6px; }}
             QScrollArea {{ border:0; background:transparent; }}
         """)
+
+    def apply_panel_effect(self):
+        set_acrylic(int(self.winId()), self.panel_background_mode == "glass", self.panel_color, self.panel_opacity)
 
     def persist_panel_settings(self):
         for key, value in (
@@ -241,6 +262,8 @@ class SecondaryTaskbar(QWidget):
             ("panel_color", self.panel_color),
             ("button_color", self.button_color),
             ("text_color", self.text_color),
+            ("panel_background_mode", self.panel_background_mode),
+            ("panel_opacity", self.panel_opacity),
         ):
             self.settings.setValue(key, value)
 
@@ -313,7 +336,7 @@ class SecondaryTaskbar(QWidget):
             label.setAlignment(Qt.AlignCenter)
             label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             label.setFont(QFont(str(config.get("font_family", "Segoe UI")), max(6, int(config.get("font_size", 9)))))
-            label.setStyleSheet(f"color:{self.text_color}; background:{self.button_color}; border-radius:{max(0, int(config.get('corner_radius', 0)))}px; padding:0 6px;")
+            label.setStyleSheet(f"color:{self.text_color}; background:{self.item_background(config, self.button_color)}; border-radius:{max(0, int(config.get('corner_radius', 0)))}px; padding:0 6px;")
             label.setToolTipDuration(5000)
             label.setProperty("item_id", entry["id"])
             return label
@@ -345,7 +368,7 @@ class SecondaryTaskbar(QWidget):
                 button.setIcon(QIcon(icon_path))
                 icon_size = max(8, int(config.get("icon_size", 24)))
                 button.setIconSize(QSize(icon_size, icon_size))
-            button.setStyleSheet(f"padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px; border-radius:{max(0, int(config.get('corner_radius', 0)))}px;")
+            button.setStyleSheet(f"background:{self.item_background(config, self.button_color)}; padding:{int(config.get('margin_y', 2))}px {int(config.get('margin_x', 10))}px; border-radius:{max(0, int(config.get('corner_radius', 0)))}px;")
             button.setFixedHeight(max(1, self.panel_height))
             button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             button.clicked.connect(self.open_start_menu)
@@ -555,6 +578,19 @@ class SecondaryTaskbar(QWidget):
         form = QFormLayout(dialog)
 
         if kind != "separator":
+            background_mode = QComboBox(dialog)
+            background_mode.addItem("Solid", "solid")
+            background_mode.addItem("Transparent", "transparent")
+            background_mode.addItem("Glass / translucent", "glass")
+            background_mode.setCurrentIndex({"solid": 0, "transparent": 1, "glass": 2}.get(config.get("background_mode", "solid"), 0))
+            form.addRow("Background", background_mode)
+            background_opacity = QSpinBox(dialog)
+            background_opacity.setRange(5, 100)
+            background_opacity.setSuffix(" %")
+            background_opacity.setValue(int(config.get("background_opacity", 72)))
+            background_opacity.setEnabled(background_mode.currentData() == "glass")
+            background_mode.currentIndexChanged.connect(lambda _index: background_opacity.setEnabled(background_mode.currentData() == "glass"))
+            form.addRow("Glass opacity", background_opacity)
             font_family = QFontComboBox(dialog)
             font_family.setCurrentFont(QFont(str(config.get("font_family", "Segoe UI"))))
             form.addRow("Font", font_family)
@@ -712,7 +748,8 @@ class SecondaryTaskbar(QWidget):
             return False
 
         if kind != "separator":
-            config.update(font_family=font_family.currentFont().family(), font_size=font_size.value(), corner_radius=corner_radius.value())
+            config.update(background_mode=background_mode.currentData(), background_opacity=background_opacity.value(),
+                          font_family=font_family.currentFont().family(), font_size=font_size.value(), corner_radius=corner_radius.value())
         if kind == "clock":
             config.update(show_date=show_date.isChecked(), show_seconds=show_seconds.isChecked(),
                           time_format=time_format.currentData(), show_am_pm=show_am_pm.isChecked(),
@@ -792,6 +829,19 @@ class SecondaryTaskbar(QWidget):
             return state
 
         panel_color_value = color_picker("Panel color", self.panel_color)
+        panel_background_mode = QComboBox(dialog)
+        panel_background_mode.addItem("Solid", "solid")
+        panel_background_mode.addItem("Transparent", "transparent")
+        panel_background_mode.addItem("Glass / acrylic", "glass")
+        panel_background_mode.setCurrentIndex({"solid": 0, "transparent": 1, "glass": 2}.get(self.panel_background_mode, 0))
+        form.addRow("Panel background", panel_background_mode)
+        panel_opacity = QSpinBox(dialog)
+        panel_opacity.setRange(5, 100)
+        panel_opacity.setSuffix(" %")
+        panel_opacity.setValue(self.panel_opacity)
+        panel_opacity.setEnabled(panel_background_mode.currentData() == "glass")
+        panel_background_mode.currentIndexChanged.connect(lambda _index: panel_opacity.setEnabled(panel_background_mode.currentData() == "glass"))
+        form.addRow("Glass opacity", panel_opacity)
         button_color_value = color_picker("Button color", self.button_color)
         text_color_value = color_picker("Text color", self.text_color)
 
@@ -810,11 +860,14 @@ class SecondaryTaskbar(QWidget):
             self.panel_length = length.value()
             self.panel_alignment = alignment.currentData()
             self.panel_color = panel_color_value["value"]
+            self.panel_background_mode = panel_background_mode.currentData()
+            self.panel_opacity = panel_opacity.value()
             self.button_color = button_color_value["value"]
             self.text_color = text_color_value["value"]
             self.persist_panel_settings()
             self.setFixedHeight(self.panel_height)
             self.apply_panel_style()
+            self.apply_panel_effect()
             self.rebuild_modules()
             self.place_bar()
 
