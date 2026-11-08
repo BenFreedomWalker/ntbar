@@ -145,7 +145,12 @@ class SecondaryTaskbar(QWidget):
         self.setWindowTitle("NtBar")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        # Only transparent mode needs a layered Qt window. Solid and acrylic
+        # modes use a normal opaque HWND so their background is not alpha-blended.
+        self.setAttribute(
+            Qt.WA_TranslucentBackground,
+            self.panel_background_mode == "transparent",
+        )
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setObjectName("NtBar")
         self.setFixedHeight(self.panel_height)
@@ -248,14 +253,16 @@ class SecondaryTaskbar(QWidget):
         return shade.name(QColor.HexArgb)
 
     def apply_panel_style(self):
-        background = self.item_background({"background_mode": self.panel_background_mode, "background_opacity": self.panel_opacity}, self.panel_color)
         if self.panel_background_mode == "transparent":
-            # A zero-alpha pixel on a WS_EX_LAYERED window is click-through in
-            # Windows. Alpha=1 is visually imperceptible but remains hittable.
+            # Keep a non-zero alpha so Windows still hit-tests the panel.
             from PySide6.QtGui import QColor
             hit_test_background = QColor(self.panel_color)
             hit_test_background.setAlpha(1)
             background = hit_test_background.name(QColor.HexArgb)
+        else:
+            # Acrylic opacity is supplied by DWM, not by making the Qt
+            # surface translucent. Solid mode is always fully opaque.
+            background = self.panel_color
         self.setStyleSheet(f"""
             QWidget#NtBar {{ background:{background}; color:{self.text_color}; }}
             QToolButton#panelItem {{ color:{self.text_color}; border:0; }}
@@ -265,6 +272,17 @@ class SecondaryTaskbar(QWidget):
 
     def apply_panel_effect(self):
         set_acrylic(int(self.winId()), self.panel_background_mode == "glass", self.panel_color, self.panel_opacity)
+
+    def update_panel_translucency(self):
+        desired = self.panel_background_mode == "transparent"
+        if self.testAttribute(Qt.WA_TranslucentBackground) == desired:
+            return
+        old_hwnd = int(self.winId())
+        if self.registered:
+            remove_appbar(old_hwnd)
+        self.setAttribute(Qt.WA_TranslucentBackground, desired)
+        if self.registered:
+            self.registered = register_appbar(int(self.winId()))
 
     def persist_panel_settings(self):
         for key, value in (
@@ -905,6 +923,7 @@ class SecondaryTaskbar(QWidget):
             self.button_color = button_color_value["value"]
             self.text_color = text_color_value["value"]
             self.persist_panel_settings()
+            self.update_panel_translucency()
             self.setFixedHeight(self.panel_height)
             self.apply_panel_style()
             self.apply_panel_effect()
