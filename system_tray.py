@@ -125,6 +125,23 @@ def extract_icon_pixels(hicon, size=32):
         class BITMAPINFO(ctypes.Structure):
             _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 3)]
 
+        user32.GetDC.argtypes = [wintypes.HWND]
+        user32.GetDC.restype = wintypes.HDC
+        user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+        user32.DrawIconEx.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.HICON,
+                                      ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.HBRUSH, wintypes.UINT]
+        user32.DrawIconEx.restype = wintypes.BOOL
+        gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+        gdi32.CreateCompatibleDC.restype = wintypes.HDC
+        gdi32.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.POINTER(BITMAPINFO), wintypes.UINT,
+                                          ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD]
+        gdi32.CreateDIBSection.restype = wintypes.HBITMAP
+        gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+        gdi32.SelectObject.restype = wintypes.HGDIOBJ
+        gdi32.PatBlt.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.DWORD]
+        gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+        gdi32.DeleteDC.argtypes = [wintypes.HDC]
+
         info = BITMAPINFO()
         info.bmiHeader = BITMAPINFOHEADER(
             ctypes.sizeof(BITMAPINFOHEADER), size, -size, 1, 32, 0,
@@ -269,6 +286,7 @@ def activate_notification_icon(entry, right_click=False):
 _shared_events = None
 _shared_provider = None
 _shared_users = 0
+_shared_entries = {}
 
 class SystemTrayWidget(QWidget):
     def __init__(self, config, panel_height, parent=None):
@@ -276,15 +294,17 @@ class SystemTrayWidget(QWidget):
         self.config = config
         self.panel_height = panel_height
         self.icon_size = max(8, min(48, int(config.get("icon_size", 18))))
-        self.entries = {}
-        global _shared_events, _shared_provider, _shared_users
+        global _shared_events, _shared_provider, _shared_users, _shared_entries
         if _shared_events is None:
             _shared_events = TrayEvents()
             _shared_provider = WindowsNotificationArea(_shared_events)
-            _shared_provider.start()
+            _shared_entries = {}
+        self.entries = dict(_shared_entries)
         self.events = _shared_events
         self.events.changed.connect(self.on_notification_changed)
         self._connected = True
+        if _shared_users == 0:
+            _shared_provider.start()
         _shared_users += 1
         self.setToolTip(_shared_provider.error or "Windows notification area")
 
@@ -295,17 +315,18 @@ class SystemTrayWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setFixedHeight(max(1, panel_height))
 
-        self.provider.start()
 
     def on_notification_changed(self, event, data):
+        global _shared_entries
         key = data["key"]
         if event == 2 or not data["hwnd"]:
-            self.entries.pop(key, None)
+            _shared_entries.pop(key, None)
         else:
-            self.entries[key] = TrayEntry(
+            _shared_entries[key] = TrayEntry(
                 key, data["hwnd"], data["uid"], data["guid"],
                 data["exe"], data["tip"], data.get("icon_pixels", b"")
             )
+        self.entries = dict(_shared_entries)
         self.rebuild_icons()
 
     def rebuild_icons(self):
@@ -336,6 +357,7 @@ class SystemTrayWidget(QWidget):
             _shared_provider.stop()
             _shared_provider = None
             _shared_events = None
+            _shared_entries = {}
 
     def closeEvent(self, event):
         self.shutdown()
