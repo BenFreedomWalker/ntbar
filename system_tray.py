@@ -48,7 +48,7 @@ if COMTYPES_AVAILABLE:
                       (["in"], POINTER(INotificationCB), "callback"),
                       (["out"], POINTER(c_ulong), "cookie")),
             COMMETHOD([], HRESULT, "UnregisterCallback",
-                      (["in"], c_ulong, "cookie")),
+                      (["in"], POINTER(c_ulong), "cookie")),
             COMMETHOD([], HRESULT, "SetPreference",
                       (["in"], POINTER(NOTIFYITEM), "item")),
             COMMETHOD([], HRESULT, "EnableAutoTray", (["in"], wintypes.BOOL, "enabled")),
@@ -207,7 +207,7 @@ class WindowsNotificationArea:
         if self.service is not None:
             try:
                 if not self.legacy and self.cookie is not None:
-                    self.service.UnregisterCallback(self.cookie.value)
+                    self.service.UnregisterCallback(ctypes.byref(self.cookie))
                 else:
                     self.service.RegisterCallback(None)
             except Exception:
